@@ -664,3 +664,57 @@ Once that works reliably, expand detection so the program can discover candidate
 After that, incorporate unavailable-track recovery, shadow-release auditing, canonical recording identities, historical snapshots, and the broader library database.
 
 Treat **read-only indexing and trustworthy data modeling as the foundation**. The migration feature should be built on top of that foundation rather than writing a one-off Spotify mutation script.
+
+---
+
+## Cross-client catalog and membership disagreement
+
+The `04z06240Vjb63T2eow1TX8` incident establishes a separate state layer from
+the ordinary “same recording, different Spotify ID” problem: desktop and phone
+can report incompatible Saved In/Liked Songs membership for the same apparent
+track. A Build preview scan is read-only and did not cause that discrepancy.
+
+The eventual database must retain source occurrence URI/position,
+requested/effective URI, client/platform/version, market, timestamp, UI surface
+and evidence result. “Not shown on phone” is not a deletion signal. Destructive
+work requires a fresh authoritative library/playlist verification.
+
+Treat membership as an observation with a three-state result (`present`,
+`absent`, or `unknown`), not as a single mutable fact inferred from one UI.
+Capture the playlist ID and zero-based occurrence position, current
+album/release context, and raw evidence when possible. Playback only proves
+playability; it does not prove that the phone is displaying the same effective
+catalog object or membership identity as the stored playlist occurrence.
+
+For the migration UI, surface this as a **catalog or sync disagreement** and
+offer a read-only recheck. Compare the stored playlist URI with the opened or
+playing URI, record a relinking edge only when Spotify exposes it, and otherwise
+leave it unresolved. A preview is discovery-only. Before any source deletion,
+the app must freshly re-fetch the target playlist, verify every replacement,
+and use the fresh playlist snapshot with Spotify's currently supported URI-based
+removal request. The current endpoint does not expose per-occurrence deletion
+positions, so the app must verify counts and final state rather than claim a
+positional delete capability.
+
+The observed “12 affected playlists · 108 inaccessible skipped” screen was a
+completed **Build preview**, not a completed migration. That explains why the
+destination was not subsequently present in those 12 playlists: preview only
+discovered the locations. There is no evidence in that output that the separate
+Confirm migration action ran, so this run cannot confidently be blamed for the
+phone/desktop disagreement. This conclusion does not rule out a different,
+unshown execution attempt.
+
+“Inaccessible” must not be presented as synonymous with “not mine.” Under the
+current Spotify Web API, playlist items are available only for playlists owned
+by the current user or playlists where the user is a collaborator; those cases
+normally produce a 403 for followed playlists. Rate limits, authorization
+problems, availability failures, and transient/network errors are different
+failure classes. Preserve the status and reason, show them separately, and treat
+every unreadable playlist as unknown coverage rather than empty.
+
+Liked Songs is part of “everywhere,” not an optional future scope. Preview must
+check source and destination membership. Execution must request library read and
+modify scopes, save and verify replacement likes before removing any old like,
+keep the old like if playlist migration does not complete, and verify the final
+saved state. The browser prototype now follows this rule through Spotify's
+current `/me/library` and `/me/library/contains` endpoints.

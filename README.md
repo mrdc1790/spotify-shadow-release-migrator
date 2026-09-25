@@ -6,12 +6,35 @@ Safely replace a Spotify track—or an entire shadow re-release of an album—ac
 
 - **Track mode:** replace one specific track with another.
 - **Album mode:** pair two album releases by disc number + track number, then replace every source-album track found in your playlists.
-- Shows the exact track mapping and affected playlists before changing anything.
+- Shows the exact track mapping, Liked Songs state, and affected playlists before changing anything.
 - Adds every needed destination track first. If **any add fails, no source track is removed anywhere**.
-- Avoids adding a replacement that is already present in that playlist.
+- Preserves duplicate source occurrences: an existing destination occurrence does
+  not cancel the replacement occurrence that the source contributes.
 - Removes all occurrences of each source track after the add phase succeeds.
 
 Spotify has no multi-playlist transaction. A rare failure during the final removal phase can leave both releases in a playlist; the results identify that playlist. This intentionally fails in the safer direction.
+
+## Cross-client disagreement and current scope
+
+The preview screen is read-only: it never adds, removes, likes, or unlikes
+anything. Therefore a destination will not appear in the listed playlists merely
+because preview found them. The **Confirm migration** button is the account-write
+boundary.
+
+If phone and desktop disagree about Saved In or Liked Songs, preserve that as
+conflicting evidence rather than treating it as a removal. See
+[cross-client reconciliation](CROSS_CLIENT_RECONCILIATION.md).
+
+Migration includes Liked Songs using Spotify's current `/me/library` endpoints.
+It freshly checks saved membership, saves and verifies every needed replacement,
+and removes old likes only after playlist migration succeeds. Playlist migration
+likewise re-fetches every target before mutation and verifies replacements before
+source removal. Any changed or unverifiable collection stops in the safe
+direction with its old membership intact.
+
+Existing users must reconnect once so Spotify can grant the newly required
+`user-library-read` and `user-library-modify` scopes. The app invalidates its
+older scope set automatically.
 
 ## Setup (one time)
 
@@ -70,8 +93,9 @@ If a deluxe edition has extra tracks or the sequencing differs, the tool refuses
 
 ## Important limitations
 
-- Spotify exposes playlist contents only for playlists you own or collaborate on. Followed playlists you cannot edit are skipped.
-- This changes playlists, not Liked Songs / Your Library.
+- Spotify only exposes playlist items for playlists you own or collaborate on.
+  A `403` is reported as “not owned/collaborative”; timeouts, rate limits, and
+  other failures are counted separately. “Unreadable” is not treated as empty.
 - Album matching uses disc number + track number, not title similarity.
 - Local files and podcast episodes are ignored.
 
