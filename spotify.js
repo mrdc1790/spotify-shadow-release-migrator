@@ -1,8 +1,90 @@
 export const API_BASE = 'https://api.spotify.com/v1';
 
-export function retryAfterMilliseconds(retryAfter) {
+export function retryAfterMilliseconds(retryAfter, fallback = 30000) {
     const seconds = Number(retryAfter);
-    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1000) : 1000;
+    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1000) : fallback;
+}
+
+export function createSpotifyQueue({
+    now = Date.now,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    readCooldown = () => 0,
+    saveCooldown = () => {},
+    onWait = () => {},
+    minimumInterval = 350,
+    maxRetries = 5,
+    maxAutomaticWait = 60000,
+} = {}) {
+    let tail = Promise.resolve();
+    let nextRequest = 0;
+    let cooldown = 0;
+    let interval = minimumInterval;
+    let diagnostic = 'A saved cooldown is active; its original response details are unavailable.';
+
+    function deadline() {
+        const stored = Number(readCooldown());
+        if (Number.isFinite(stored)) cooldown = Math.max(cooldown, stored);
+        return cooldown;
+    }
+
+    function rateLimitError() {
+        const error = new Error(
+            `${diagnostic} Spotify rate limit: next permitted attempt ${new Date(deadline()).toLocaleString()} ` +
+                `(${Math.max(1, Math.ceil((deadline() - now()) / 1000))} seconds) before trying again. ` +
+                'Request stopped. Rebuild a complete preview before migration. Reloading does not clear this cooldown.',
+        );
+        error.status = 429;
+        error.retryAt = deadline();
+        return error;
+    }
+
+    return function enqueue(request, label = 'Spotify API') {
+        const queued = tail.then(async () => {
+            // Fail queued/new jobs after a stopped request instead of starting another retry cycle.
+            if (deadline() > now()) throw rateLimitError();
+            for (let attempt = 0; ; attempt++) {
+                let remaining;
+                while ((remaining = Math.max(deadline(), nextRequest) - now()) > 0) {
+                    if (remaining > maxAutomaticWait) throw rateLimitError();
+                    await sleep(remaining);
+                }
+                let response;
+                try {
+                    // Authentication is checked by the caller here, after any cooldown.
+                    response = await request();
+                } finally {
+                    nextRequest = now() + interval;
+                }
+                if (response.status !== 429) return response;
+                interval = Math.min(10000, interval * 2);
+                const header = response.headers.get('Retry-After');
+                const seconds = Number(header);
+                const serverDelay = Number.isFinite(seconds) && seconds > 0;
+                const headerState =
+                    header === null
+                        ? 'unavailable to this page'
+                        : seconds === 0
+                          ? 'zero or empty'
+                          : 'invalid';
+                diagnostic =
+                    `HTTP 429 on ${label} (attempt ${attempt + 1}). ` +
+                    (serverDelay
+                        ? `Spotify Retry-After: ${seconds} seconds.`
+                        : `Retry-After is ${headerState}. The 30-second wait is a local safety backoff, not a Spotify recovery estimate.`);
+                const delay = Math.max(retryAfterMilliseconds(header, 30000), 1000 * 2 ** attempt);
+                cooldown = Math.max(deadline(), now() + delay);
+                if (attempt >= maxRetries) cooldown = Math.max(cooldown, now() + 30000);
+                saveCooldown(cooldown);
+                // Without a usable server delay, stop instead of manufacturing a sequence
+                // of 30/60/120-second recovery estimates and replaying a rejected endpoint.
+                if (!serverDelay || attempt >= maxRetries || delay > maxAutomaticWait)
+                    throw rateLimitError();
+                onWait(cooldown - now(), diagnostic);
+            }
+        });
+        tail = queued.catch(() => {});
+        return queued;
+    };
 }
 
 export function buildAuthorizationUrl({ clientId, redirectUri, scopes, challenge, state }) {
@@ -45,7 +127,16 @@ export async function collectPages(firstUrl, request) {
     let url = firstUrl;
     while (url) {
         const page = await request(url);
-        items.push(...(page.items || []));
+        if (
+            !page ||
+            !Array.isArray(page.items) ||
+            !(page.next === null || (typeof page.next === 'string' && page.next.length > 0))
+        ) {
+            throw new Error(
+                'Spotify returned incomplete pagination; coverage could not be verified.',
+            );
+        }
+        items.push(...page.items);
         url = page.next;
     }
     return items;

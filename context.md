@@ -473,11 +473,7 @@ GitHub:
 
 It solves a related but narrower duplicate problem.
 
-My understanding from prior investigation is that it primarily handles repeated Spotify objects/URIs and therefore does **not inherently solve**:
-
-`OLD_TRACK_ID != NEW_TRACK_ID`
-
-when the two IDs represent effectively the same recording.
+The earlier identical-URI-only assessment was incomplete. The [inspected matcher](https://github.com/JMPerez/spotify-dedup/blob/master/dedup/deduplicator.ts) also flags different IDs with case-insensitive matching title/first artist and duration difference below 2,000 ms. The [current site](https://spotify-dedup.com/) describes configurable similarity rules and playlist/Liked Songs review. Ordinary single/album pairs can therefore be candidates without relink evidence. Null IDs are skipped; heuristic matching is not proof of identical audio or complete local/device coverage. The deployed site may differ from the inspected source.
 
 Still worth studying for:
 
@@ -505,6 +501,8 @@ However, prior review found concerns/limitations including:
 Do not blindly run this against my account.
 
 It may still contain useful logic worth adapting.
+
+The [source review](https://github.com/AfterForever667/spotify_songs_relink/blob/main/spotify_songs_relink.py) confirms that the per-page ID dictionary collapses repeated occurrences and excludes missing IDs, so its report is not a full local/occurrence inventory. Ordinary playable single/album pairs without exposed relinking can remain classified as OK. Its add/remove calls have no intervening verification read. Neither this tool nor Dedup establishes the cause of device-count discrepancies; no reference tool was run against the account for this review.
 
 ### Other related utilities previously encountered
 
@@ -649,6 +647,14 @@ My playlist can contain a particular Spotify representation at a particular posi
 
 The database should preserve those distinctions instead of flattening everything into "song = Spotify ID."
 
+## Broader identity and reconciliation scope
+
+Ordinary single-versus-album releases with different track IDs are an explicit category, even without shadowing or `linked_from`. The same applies to deluxe/compilation candidates. Cover both playlists and Liked Songs, distinguish actual versions, and never infer identical audio from metadata alone. The complete [taxonomy and reconciliation plan](CROSS_CLIENT_RECONCILIATION.md#shared-duplicate-and-identity-taxonomy) separates exact occurrences, cross-playlist overlap, ordinary release duplicates, shadows, market relinks, genuine variants, local/cloud matches, local file duplicates, missing objects, and client disagreement.
+
+All selected local audio belongs in the broader library goal, including files never referenced by a playlist. Captured local references are not a filesystem inventory or phone-download verification. Device Liked Songs displays, API saved rows, and Local Files totals must remain separate observations; no simple subtraction establishes missing tracks. The user's preferred home-device state is an intent reference, not proof that other observations are wrong. Full local/device reconciliation and automatic recording matching remain planned. This browser app only inspects selected source/destination saved membership and playlist occurrences.
+
+Migration and deduplication are separate: replacing two old occurrences must retain two replacement occurrences in addition to any already present. A reviewed single/album mapping is possible in track mode subject to existing gates; automatic detection and local-to-cloud conversion are not implemented.
+
 ---
 
 # Immediate objective
@@ -677,7 +683,8 @@ track. A Build preview scan is read-only and did not cause that discrepancy.
 The eventual database must retain source occurrence URI/position,
 requested/effective URI, client/platform/version, market, timestamp, UI surface
 and evidence result. “Not shown on phone” is not a deletion signal. Destructive
-work requires a fresh authoritative library/playlist verification.
+work requires fresh verification for the exact library/playlist identities within
+the API's observed scope; that does not establish complete local-device coverage.
 
 Treat membership as an observation with a three-state result (`present`,
 `absent`, or `unknown`), not as a single mutable fact inferred from one UI.
