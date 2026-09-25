@@ -5,6 +5,7 @@ import {
     finishLibraryMigration,
     parseSpotifyInput,
     prepareLibraryMigration,
+    retryAfterMilliseconds,
     runSafeMigration,
 } from './spotify.js';
 const tests = [],
@@ -22,6 +23,11 @@ test('parses track and album inputs', () => {
         type: 'track',
         id: '6rqhFgbbKwnb9MLmUQDhG6',
     });
+});
+
+test('honors Spotify Retry-After without truncating a long cooldown', () => {
+    equal(retryAfterMilliseconds('24000'), 24000000);
+    equal(retryAfterMilliseconds(null), 1000);
 });
 
 test('builds a PKCE authorization URL with every requested scope', () => {

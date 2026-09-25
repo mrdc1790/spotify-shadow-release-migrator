@@ -8,6 +8,7 @@ import {
   finishLibraryMigration,
   parseSpotifyInput,
   prepareLibraryMigration,
+  retryAfterMilliseconds,
   runSafeMigration,
   trackUri,
 } from './spotify.js';
@@ -25,6 +26,12 @@ const state = {
     replacements: [],
     skipped: [],
 };
+
+const maxRateLimitRetries = 5;
+const minimumRequestInterval = 350;
+let retryNotBefore = 0;
+let nextRequestNotBefore = 0;
+let requestQueue = Promise.resolve();
 
 const $ = (s) => document.querySelector(s);
 const status = $('#status');
@@ -128,36 +135,57 @@ async function refresh() {
     return null;
   }
 }
+
+function wait(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function queueSpotifyRequest(request) {
+    const queued = requestQueue.then(request);
+    requestQueue = queued.catch(() => {});
+    return queued;
+}
+
 async function api(path, options = {}) {
-  if (!state.token || Date.now() >= Number(sessionStorage.getItem('expires_at') || 0) - 30000)
-    state.token = await refresh();
-  if (!state.token) throw new Error('Spotify session expired. Reconnect.');
-  const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
-  let response;
-  for (let i = 0; i < 3; i++) {
-    response = await fetch(url, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${state.token}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+    if (!state.token || Date.now() >= Number(sessionStorage.getItem('expires_at') || 0) - 30000)
+        state.token = await refresh();
+    if (!state.token) throw new Error('Spotify session expired. Reconnect.');
+    const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+    const response = await queueSpotifyRequest(async () => {
+        let latestResponse;
+        for (let attempt = 0; attempt <= maxRateLimitRetries; attempt++) {
+            const notBefore = Math.max(retryNotBefore, nextRequestNotBefore);
+            const remainingDelay = notBefore - Date.now();
+            if (remainingDelay > 0) await wait(remainingDelay);
+            latestResponse = await fetch(url, {
+                ...options,
+                headers: {
+                    Authorization: `Bearer ${state.token}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers,
+                },
+            });
+            nextRequestNotBefore = Date.now() + minimumRequestInterval;
+            if (latestResponse.status !== 429) return latestResponse;
+            const delay = retryAfterMilliseconds(latestResponse.headers.get('Retry-After'));
+            retryNotBefore = Math.max(retryNotBefore, Date.now() + delay);
+            if (attempt < maxRateLimitRetries)
+                message(
+                    `Spotify is rate limiting requests; retrying in ${Math.ceil(delay / 1000)} seconds…`,
+                );
+        }
+        return latestResponse;
     });
-    if (response.status !== 429) break;
-    await new Promise((r) =>
-      setTimeout(r, Math.min(Number(response.headers.get('Retry-After') || 1), 10) * 1000),
-    );
-  }
-  if (!response.ok) {
-    let detail = '';
-    try {
-      detail = (await response.json()).error?.message || '';
-    } catch {}
-    const error = new Error(detail || `Spotify request failed (${response.status}).`);
-    error.status = response.status;
-    throw error;
-  }
-  return response.status === 204 ? null : response.json();
+    if (!response.ok) {
+        let detail = '';
+        try {
+            detail = (await response.json()).error?.message || '';
+        } catch {}
+        const error = new Error(detail || `Spotify request failed (${response.status}).`);
+        error.status = response.status;
+        throw error;
+    }
+    return response.status === 204 ? null : response.json();
 }
 async function resolveInputs() {
   const chosen = document.querySelector('input[name=kind]:checked').value,
@@ -169,10 +197,9 @@ async function resolveInputs() {
     throw new Error('Use two tracks or two albums—not one of each.');
   if (source.id === destination.id) throw new Error('Source and destination must differ.');
   if (sourceType === 'track') {
-    const [a, b] = await Promise.all([
-      api(`/tracks/${source.id}`),
-      api(`/tracks/${destination.id}`),
-    ]);
+    const tracks = await api(`/tracks?ids=${encodeURIComponent(`${source.id},${destination.id}`)}`);
+    const [a, b] = tracks.tracks;
+    if (!a || !b) throw new Error('Spotify could not load both tracks. Check that they are available to this account.');
     return {
       sourceLabel: `${a.name} — ${a.artists.map((x) => x.name).join(', ')}`,
       destinationLabel: `${b.name} — ${b.artists.map((x) => x.name).join(', ')}`,
@@ -209,6 +236,7 @@ async function inspectLibrary(uris) {
 }
 async function scan() {
   try {
+    $('#scan').disabled = true;
     $('#execute').disabled = true;
     $('#preview').hidden = true;
     message('Validating releases and Liked Songs…');
@@ -246,6 +274,8 @@ async function scan() {
     render(resolved.replacements);
   } catch (error) {
     message(error.message, 'error');
+  } finally {
+    $('#scan').disabled = false;
   }
 }
 async function inspectPlaylist(id) {

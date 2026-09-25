@@ -1,5 +1,10 @@
 export const API_BASE = 'https://api.spotify.com/v1';
 
+export function retryAfterMilliseconds(retryAfter) {
+    const seconds = Number(retryAfter);
+    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1000) : 1000;
+}
+
 export function buildAuthorizationUrl({ clientId, redirectUri, scopes, challenge, state }) {
     const url = new URL('https://accounts.spotify.com/authorize');
     url.search = new URLSearchParams({
