@@ -1,1 +1,13 @@
-{"name":"spotify-playlist-migrator","version":"1.1.0","private":true,"type":"module","scripts":{"start":"node server.js","test":"node spotify.test.js"},"engines":{"node":">=14"}}
+{
+  "name": "spotify-playlist-migrator",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node spotify.test.js"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
