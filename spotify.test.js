@@ -1,4 +1,5 @@
 import {
+    buildAuthorizationUrl,
     buildAlbumReplacements,
     findLibraryTarget,
     finishLibraryMigration,
@@ -21,6 +22,23 @@ test('parses track and album inputs', () => {
         type: 'track',
         id: '6rqhFgbbKwnb9MLmUQDhG6',
     });
+});
+
+test('builds a PKCE authorization URL with every requested scope', () => {
+    const scopes = 'playlist-read-private user-library-read user-library-modify';
+    const url = buildAuthorizationUrl({
+        clientId: '0123456789abcdef0123456789abcdef',
+        redirectUri: 'http://127.0.0.1:5173/',
+        scopes,
+        challenge: 'challenge-value',
+        state: 'state-value',
+    });
+
+    equal(url.origin, 'https://accounts.spotify.com');
+    equal(url.pathname, '/authorize');
+    equal(url.searchParams.get('scope'), scopes);
+    equal(url.searchParams.get('code_challenge_method'), 'S256');
+    equal(url.searchParams.get('state'), 'state-value');
 });
 test('pairs albums by disc and track number', () => {
     const r = buildAlbumReplacements(

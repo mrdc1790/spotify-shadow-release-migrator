@@ -1,5 +1,6 @@
 import {
   API_BASE,
+  buildAuthorizationUrl,
   buildAlbumReplacements,
   collectPages,
   findLibraryTarget,
@@ -27,60 +28,63 @@ const state = {
 
 const $ = (s) => document.querySelector(s);
 const status = $('#status');
-  const authStatus = $('#authStatus');
+const authStatus = $('#authStatus');
+
 function message(text, kind = '') {
-  status.textContent = text;
-  status.className = `status ${kind}`;
+    status.textContent = text;
+    status.className = `status ${kind}`;
 }
+
 function randomString(n = 64) {
-  const bytes = crypto.getRandomValues(new Uint8Array(n)),
-    chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
+    const bytes = crypto.getRandomValues(new Uint8Array(n));
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
+
 function b64(bytes) {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+    return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
 }
+
 async function login() {
-  const clientId = $('#clientId').value.trim();
+    const clientId = $('#clientId').value.trim();
 
-  if (!clientId) {
-    return message(
-      'Enter the Client ID from your Spotify app.',
-      'error'
-    );
-  }
+    if (!clientId) {
+        authStatus.textContent = 'Enter the Client ID from your Spotify app.';
+        authStatus.className = 'status error';
+        return;
+    }
 
-  localStorage.setItem('spotify_client_id', clientId);
+    try {
+        authStatus.textContent = 'Opening Spotify authorization…';
+        authStatus.className = 'status';
+        localStorage.setItem('spotify_client_id', clientId);
 
-  const verifier = randomString();
-  const oauthState = randomString(24);
+        const verifier = randomString();
+        const oauthState = randomString(24);
+        const challenge = b64(
+            await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
+        );
 
-  const challenge = b64(
-    await crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(verifier)
-    )
-  );
+        sessionStorage.setItem('pkce_verifier', verifier);
+        sessionStorage.setItem('oauth_state', oauthState);
 
-  sessionStorage.setItem('pkce_verifier', verifier);
-  sessionStorage.setItem('oauth_state', oauthState);
+        const url = buildAuthorizationUrl({
+            clientId,
+            redirectUri,
+            scopes,
+            challenge,
+            state: oauthState,
+        });
+        location.assign(url);
+    } catch (error) {
+        authStatus.textContent = `Could not start Spotify login: ${error.message}`;
+        authStatus.className = 'status error';
+    }
+}
 
-  const url = new URL('https://accounts.spotify.com/authorize');
-
-  url.search = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'code',
-    redirect_uri: redirectUri,
-    scope,
-    code_challenge_method: 'S256',
-    code_challenge: challenge,
-    state: oauthState
-  });
-
-  location.assign(url);
 async function tokenRequest(body) {
   const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',

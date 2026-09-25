@@ -1,4 +1,19 @@
 export const API_BASE = 'https://api.spotify.com/v1';
+
+export function buildAuthorizationUrl({ clientId, redirectUri, scopes, challenge, state }) {
+    const url = new URL('https://accounts.spotify.com/authorize');
+    url.search = new URLSearchParams({
+        client_id: clientId,
+        response_type: 'code',
+        redirect_uri: redirectUri,
+        scope: scopes,
+        code_challenge_method: 'S256',
+        code_challenge: challenge,
+        state,
+    });
+    return url;
+}
+
 export function parseSpotifyInput(input) {
     const value = String(input || '').trim();
     let match = value.match(/^spotify:(track|album):([A-Za-z0-9]{22})$/);
