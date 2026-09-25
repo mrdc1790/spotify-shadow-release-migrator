@@ -12,6 +12,11 @@ This must not be interpreted as a removal or as proof that either client is
 authoritative. A client can display stale/incomplete membership metadata or a
 different effective catalog instance. Playback proves playability only.
 
+The broader evidence model and dated count/recovery observations live in the
+[Personal Music Library](https://github.com/mrdc1790/personal-music-library)
+repository. This app retains the same rule locally because it is the explicit
+account-write surface: UI disagreement alone can never authorize a migration.
+
 ## Evidence model for the broader library project
 
 Retain the stored playlist occurrence URI and position, requested/effective URI

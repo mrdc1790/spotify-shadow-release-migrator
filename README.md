@@ -99,6 +99,12 @@ If a deluxe edition has extra tracks or the sequencing differs, the tool refuses
 - Album matching uses disc number + track number, not title similarity.
 - Local files and podcast episodes are ignored.
 
+## Related catalog project
+
+[Personal Music Library](https://github.com/mrdc1790/personal-music-library) is the separate, evidence-preserving local catalog for read-only Spotify captures, historical snapshots, duplicate/overlap analysis, local-track references, and reconciliation research. This app is the narrower reviewed migration surface.
+
+The projects share these rules: preserve duplicate occurrences; classify unreadable playlists as unknown coverage; treat phone/desktop disagreement as evidence rather than a deletion signal; and keep preview read-only. They do not share code, runtime storage, OAuth credentials, or a Git upstream. A migration journal belongs with the catalog evidence, but neither app automatically reads or writes the other repository.
+
 ## Test
 
 ```powershell
