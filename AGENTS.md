@@ -36,6 +36,31 @@ relevant tests.
 - For low- or zero-caller results that matter to correctness, use Dekko's
   sanity check when available and verify against the source.
 
+### Dekko in a workspace with multiple repositories
+
+- Pass an explicit absolute `root` on every Dekko MCP call. For this repo use
+  `C:\Users\polla\Documents\ChatGPT\spotify song playlist migrator`; for the sibling use
+  `C:\Users\polla\Documents\ChatGPT\personal-music-library`.
+  Resolve the checkout's actual absolute path if the workspace moves.
+- Roots are independent indexes. Query each affected repo separately; the shared
+  parent directory does not combine their maps. Never assume a previous call
+  changes the default root: an omitted `root` uses the server's configured cwd.
+- Start with `map_status(root=...)`; use `refresh_map(root=...)` if stale or
+  missing. Reuse a fresh map until relevant source changes; avoid repeated rebuilds.
+- For unfamiliar work, use a compact `summary` once, then focused `search_code`
+  or `outline` queries. Once a symbol is known, prefer file-qualified symbols
+  and a budgeted `get_context_pack` or `workset` over broad reads and repeated
+  searches. Read the actual source and relevant tests before editing.
+- Before relying on caller/callee impact, use `check_ambiguous` and spot-check
+  affected ambiguous calls in source. Include tests with `get_callers` when
+  needed. A zero result is a navigation lead, not proof of no impact; verify
+  with targeted `rg`. Cross-repo impact requires separate queries in both roots.
+- Prefer the working Dekko MCP tools here. The standalone CLI failed during the
+  2026-09-30 workspace test with `uv trampoline failed to canonicalize script
+  path`, while MCP refresh/search/impact calls worked. If MCP is unavailable,
+  use targeted `rg` and source/test inspection rather than repeatedly retrying
+  the broken CLI. Reassess the CLI if its installation changes.
+
 ## Source formatting
 
 Keep source files human-readable.
@@ -52,8 +77,11 @@ Keep source files human-readable.
 
 ## Implementation and verification
 
-- Keep authentication on Authorization Code with PKCE and retain the
-  client-only/no-client-secret design.
+- Keep authentication and token refresh on Authorization Code with PKCE in the
+  browser, with no client secret. The user-approved localhost relay may forward
+  allowlisted GET reads to expose Spotify cooldown headers; it must reject writes,
+  foreign origins/hosts, and redirects, and never log or persist credentials.
+  Confirmed mutations remain browser initiated and retain the existing safety gates.
 - Before changing migration behavior, trace both the preview and confirmed
   execution paths, including Liked Songs, duplicate occurrences, retry/error
   handling, and post-write verification.
