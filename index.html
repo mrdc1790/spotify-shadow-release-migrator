@@ -38,7 +38,8 @@
                     <p id="authStatus" class="status" aria-live="polite"></p>
 
                     <p class="fine">
-                        PKCE login: no client secret. Credentials stay in this browser.
+                        PKCE login: no client secret. Reads pass through this computer's local
+                        server, which does not save credentials.
                     </p>
                 </div>
             </section>
@@ -46,7 +47,10 @@
                 <span class="step">02</span>
                 <div>
                     <div class="account-row">
-                        <p>Connected as <strong id="account"></strong></p>
+                        <p>
+                            <span id="accountLabel">Spotify session saved</span>
+                            <strong id="account" hidden></strong>
+                        </p>
                         <button id="disconnect" class="quiet">Disconnect</button>
                     </div>
                     <h2>Choose two matching releases</h2>
@@ -94,7 +98,25 @@
                     <button id="execute" class="danger">Confirm migration</button>
                 </div>
             </section>
+            <p id="cooldownStatus" class="status" aria-live="polite" hidden></p>
+            <button id="checkAvailability" class="quiet" hidden>Check Spotify availability</button>
+            <p id="requestCount" class="fine">
+                This page: 0 reported Spotify read attempts; 0 write attempts.
+            </p>
             <p id="status" class="status" aria-live="polite">Ready.</p>
+            <details class="fine">
+                <summary>Record a cooldown from Spotify</summary>
+                <p>
+                    The local server reads Spotify's retry header automatically. If you already have
+                    a retry deadline from a previous response, enter it here in your local time
+                    zone. This records a wait; it does not clear Spotify's quota restriction.
+                    Reloading preserves the wait. Rebuilding a preview rechecks saved playlist
+                    snapshots and resumes unchanged pages.
+                </p>
+                <label for="retryTime">Verified retry time</label>
+                <input id="retryTime" type="datetime-local" step="1" />
+                <button id="recordCooldown" class="quiet">Record cooldown</button>
+            </details>
         </main>
         <script type="module" src="/app.js"></script>
     </body>

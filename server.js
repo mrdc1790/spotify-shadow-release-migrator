@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createSpotifyReadRelay } from './spotify-relay.js';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const host = '127.0.0.1';
 const port = Number(process.env.PORT || 5173);
@@ -17,7 +18,15 @@ const types = {
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
 };
-http.createServer((req, res) => {
+const relaySpotifyRead = createSpotifyReadRelay();
+const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/spotify-read/')) {
+        relaySpotifyRead(req, res).catch(() => {
+            if (!res.headersSent) res.writeHead(502, { 'Cache-Control': 'no-store' });
+            res.end();
+        });
+        return;
+    }
     const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
     const file = files.get(pathname);
     if (!file) {
@@ -38,7 +47,16 @@ http.createServer((req, res) => {
         });
         res.end(data);
     });
-}).listen(port, host, () => {
+});
+server.on('error', (error) => {
+    console.error(
+        error.code === 'EADDRINUSE'
+            ? `Port ${port} is already in use. If the migrator is already running, stop that server with Ctrl+C before restarting it.`
+            : `Local server failed (${error.code || 'unknown error'}).`,
+    );
+    process.exitCode = 1;
+});
+server.listen(port, host, () => {
     console.log(`Spotify Playlist Migrator: http://${host}:${port}`);
     console.log(`Redirect URI: http://${host}:${port}/`);
 });

@@ -19,29 +19,37 @@ export function createSpotifyQueue({
     let nextRequest = 0;
     let cooldown = 0;
     let interval = minimumInterval;
+    let unknownCooldown = false;
     let diagnostic = 'A saved cooldown is active; its original response details are unavailable.';
 
     function deadline() {
-        const stored = Number(readCooldown());
+        const record = readCooldown();
+        if (record && typeof record === 'object') {
+            unknownCooldown = record.unknown === true;
+        }
+        const stored = Number(record && typeof record === 'object' ? record.until : record);
         if (Number.isFinite(stored)) cooldown = Math.max(cooldown, stored);
         return cooldown;
     }
 
     function rateLimitError() {
+        deadline();
         const error = new Error(
-            `${diagnostic} Spotify rate limit: next permitted attempt ${new Date(deadline()).toLocaleString()} ` +
-                `(${Math.max(1, Math.ceil((deadline() - now()) / 1000))} seconds) before trying again. ` +
-                'Request stopped. Rebuild a complete preview before migration. Reloading does not clear this cooldown.',
+            unknownCooldown
+                ? `${diagnostic} Spotify cooldown duration is unknown. Requests are blocked until you record a verified retry time. No automatic retry.`
+                : `${diagnostic} Spotify rate limit: next permitted attempt ${new Date(deadline()).toLocaleString()} ` +
+                  `(${Math.max(1, Math.ceil((deadline() - now()) / 1000))} seconds) before trying again. ` +
+                  'Request stopped. Rebuild a complete preview before migration. Reloading does not clear this cooldown.',
         );
         error.status = 429;
-        error.retryAt = deadline();
+        error.retryAt = unknownCooldown ? null : deadline();
         return error;
     }
 
-    return function enqueue(request, label = 'Spotify API') {
+    function enqueue(request, label = 'Spotify API', recoveryProbe = false) {
         const queued = tail.then(async () => {
             // Fail queued/new jobs after a stopped request instead of starting another retry cycle.
-            if (deadline() > now()) throw rateLimitError();
+            if (deadline() > now() || (unknownCooldown && !recoveryProbe)) throw rateLimitError();
             for (let attempt = 0; ; attempt++) {
                 let remaining;
                 while ((remaining = Math.max(deadline(), nextRequest) - now()) > 0) {
@@ -55,7 +63,13 @@ export function createSpotifyQueue({
                 } finally {
                     nextRequest = now() + interval;
                 }
-                if (response.status !== 429) return response;
+                if (response.status !== 429) {
+                    if (recoveryProbe && response.ok) {
+                        unknownCooldown = false;
+                        saveCooldown({ unknown: false, until: cooldown });
+                    }
+                    return response;
+                }
                 interval = Math.min(10000, interval * 2);
                 const header = response.headers.get('Retry-After');
                 const seconds = Number(header);
@@ -66,25 +80,67 @@ export function createSpotifyQueue({
                         : seconds === 0
                           ? 'zero or empty'
                           : 'invalid';
+                let quotaReason = '';
+                try {
+                    if ((await response.clone().json()).error?.reason === 'QUOTA_EXCEEDED') {
+                        quotaReason = ' QUOTA_EXCEEDED.';
+                    }
+                } catch {}
                 diagnostic =
                     `HTTP 429 on ${label} (attempt ${attempt + 1}). ` +
                     (serverDelay
                         ? `Spotify Retry-After: ${seconds} seconds.`
-                        : `Retry-After is ${headerState}. The 30-second wait is a local safety backoff, not a Spotify recovery estimate.`);
+                        : `Retry-After is ${headerState}.`) +
+                    quotaReason +
+                    (quotaReason
+                        ? ' Development apps owned by the same Spotify developer share quota, including other apps.'
+                        : '');
+                if (!serverDelay) {
+                    unknownCooldown = true;
+                    // A local minimum between deliberate checks, not a recovery estimate.
+                    cooldown = Math.max(cooldown, now() + 30000);
+                    saveCooldown({ unknown: true, until: cooldown });
+                    throw rateLimitError();
+                }
                 const delay = Math.max(retryAfterMilliseconds(header, 30000), 1000 * 2 ** attempt);
                 cooldown = Math.max(deadline(), now() + delay);
+                unknownCooldown = false;
                 if (attempt >= maxRetries) cooldown = Math.max(cooldown, now() + 30000);
                 saveCooldown(cooldown);
-                // Without a usable server delay, stop instead of manufacturing a sequence
-                // of 30/60/120-second recovery estimates and replaying a rejected endpoint.
-                if (!serverDelay || attempt >= maxRetries || delay > maxAutomaticWait)
+                if (recoveryProbe || attempt >= maxRetries || delay > maxAutomaticWait)
                     throw rateLimitError();
                 onWait(cooldown - now(), diagnostic);
             }
         });
         tail = queued.catch(() => {});
         return queued;
+    }
+    enqueue.check = () => {
+        if (deadline() > now() || unknownCooldown) throw rateLimitError();
     };
+    enqueue.probeUnknown = (request, label) => {
+        if (!enqueue.cooldownState().unknown)
+            return Promise.reject(new Error('An availability check requires an unknown cooldown.'));
+        return enqueue(request, label, true);
+    };
+    enqueue.cooldownState = () => {
+        deadline();
+        return {
+            paused: unknownCooldown || cooldown > now(),
+            unknown: unknownCooldown,
+            retryAt: unknownCooldown ? null : cooldown,
+            probeAt: cooldown,
+        };
+    };
+    enqueue.recordCooldown = (until) => {
+        if (!Number.isFinite(until) || until <= now())
+            throw new Error('Enter a future retry time from Spotify.');
+        cooldown = Math.max(deadline(), until);
+        unknownCooldown = false;
+        diagnostic = 'Using the retry time recorded from Spotify.';
+        saveCooldown({ unknown: false, until: cooldown });
+    };
+    return enqueue;
 }
 
 export function buildAuthorizationUrl({ clientId, redirectUri, scopes, challenge, state }) {
@@ -124,8 +180,12 @@ export const trackUri = (id) => `spotify:track:${id}`;
 export const itemUri = (row) => row?.item?.uri || row?.track?.uri || null;
 export async function collectPages(firstUrl, request) {
     const items = [];
+    const seen = new Set();
     let url = firstUrl;
     while (url) {
+        if (seen.has(url))
+            throw new Error('Spotify repeated a page; coverage could not be verified.');
+        seen.add(url);
         const page = await request(url);
         if (
             !page ||
@@ -141,6 +201,88 @@ export async function collectPages(firstUrl, request) {
     }
     return items;
 }
+// Checkpoint only preview reads. Confirmed execution always performs uncached reads.
+export function createPlaylistCheckpoints({ load = () => null, save = () => {} } = {}) {
+    const memory = new Map();
+    return async function inspect(id, request, listedSnapshot = null) {
+        const metadataUrl = `${API_BASE}/playlists/${id}?fields=snapshot_id`;
+        // Discovery just read this version. A final snapshot check still detects changes
+        // during pagination. Resumes without a listed version fetch fresh metadata.
+        const current = listedSnapshot
+            ? { snapshot_id: listedSnapshot }
+            : await request(metadataUrl);
+        if (!current?.snapshot_id) throw new Error('Playlist snapshot is unavailable.');
+        let cached = memory.get(id) || load(id);
+        if (
+            !cached ||
+            cached.snapshot !== current.snapshot_id ||
+            !Array.isArray(cached.rows) ||
+            !Array.isArray(cached.seen) ||
+            !cached.rows.every((row) => row?.item &&
+                (row.item.uri === null || typeof row.item.uri === 'string')) ||
+            !cached.seen.every((url) => typeof url === 'string' && url.length > 0) ||
+            new Set(cached.seen).size !== cached.seen.length ||
+            !(Number.isInteger(cached.total) && cached.total >= cached.rows.length) ||
+            !(cached.next === null || (typeof cached.next === 'string' && cached.next.length > 0)) ||
+            (cached.next === null && cached.rows.length !== cached.total) ||
+            (cached.complete && (cached.next !== null || cached.rows.length !== cached.total))
+        ) {
+            cached = {
+                snapshot: current.snapshot_id,
+                rows: [],
+                next: `${API_BASE}/playlists/${id}/items?limit=50`,
+                seen: [],
+                total: null,
+                complete: false,
+            };
+        }
+        if (cached.complete) {
+            if (listedSnapshot) {
+                const latest = await request(metadataUrl);
+                if (latest?.snapshot_id !== cached.snapshot) {
+                    memory.delete(id);
+                    save(id, null);
+                    return inspect(id, request, latest?.snapshot_id || null);
+                }
+            }
+            return cached.rows;
+        }
+        memory.set(id, cached);
+        while (cached.next) {
+            if (cached.seen.includes(cached.next))
+                throw new Error('Repeated playlist page; preview incomplete.');
+            const page = await request(cached.next);
+            if (
+                !page ||
+                !Array.isArray(page.items) ||
+                !Number.isInteger(page.total) ||
+                page.total < 0 ||
+                !(page.next === null || (typeof page.next === 'string' && page.next.length > 0)) ||
+                (cached.total !== null && cached.total !== page.total) ||
+                cached.rows.length + page.items.length > page.total ||
+                (page.next === null && cached.rows.length + page.items.length !== page.total) ||
+                (page.next && page.items.length === 0)
+            ) {
+                throw new Error('Incomplete or changing playlist pagination; preview unavailable.');
+            }
+            cached.rows.push(...page.items.map((row) => ({ item: { uri: itemUri(row) } })));
+            cached.total = page.total;
+            cached.seen.push(cached.next);
+            cached.next = page.next;
+            save(id, cached);
+        }
+        const after = await request(metadataUrl);
+        if (after?.snapshot_id !== cached.snapshot) {
+            memory.delete(id);
+            save(id, null);
+            throw new Error('Playlist changed during preview; rebuild to read its new version.');
+        }
+        cached.complete = true;
+        save(id, cached);
+        return cached.rows;
+    };
+}
+
 export function buildAlbumReplacements(sourceTracks, destinationTracks) {
     if (sourceTracks.length !== destinationTracks.length)
         throw new Error(

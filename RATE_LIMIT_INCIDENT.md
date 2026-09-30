@@ -4,9 +4,26 @@
 > for development-mode apps. Spotify's February 2026 migration guide removes
 > `GET /tracks`; the current implementation uses two paced `GET /tracks/{id}`
 > requests. Missing/invalid/zero retry headers now stop immediately with a
-> labeled local backoff instead of automatically retrying. See README.md for
+> an unknown cooldown instead of automatically retrying. A deliberate one-read
+> availability check now permits recovery without inventing a Spotify deadline. See README.md for
 > current behavior. The compatibility defect is confirmed; the cause of the
 > user's live 429 has not been established from a captured response.
+
+## Confirmed follow-up and current implementation
+
+A later captured playlist-list response reported `QUOTA_EXCEEDED` and a
+multi-hour `Retry-After`, but omitted the CORS exposure header. DevTools could
+show the cooldown while browser JavaScript could not. The earlier fallback
+waits therefore did not represent Spotify's real deadline. This establishes
+the cooldown visibility failure, not what originally consumed the quota.
+
+The user approved a restricted localhost read relay. It forwards the actual
+retry header to the same-origin page, never accepts writes, and does not store
+credentials on disk. The browser persists known/unknown cooldowns and can record
+a verified retry time. Preview pages now resume after snapshot revalidation;
+confirmed writes still use fresh reads. See README.md for current behavior.
+
+The sections below retain the original incident history and superseded policy.
 
 ## Summary
 

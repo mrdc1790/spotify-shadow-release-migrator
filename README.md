@@ -44,9 +44,9 @@ older scope set automatically.
 2. Create an app and select **Web API**.
 3. Open the app settings and add this exact Redirect URI:
 
-   ```text
-   http://127.0.0.1:5173/
-   ```
+    ```text
+    http://127.0.0.1:5173/
+    ```
 
 4. Copy the app's **Client ID**. You do not need its Client Secret.
 
@@ -122,23 +122,58 @@ prove the cause of a particular 429. Rate-limit messages now identify the HTTP
 status, endpoint template (without IDs/query values), attempt, and whether a
 usable Spotify `Retry-After` was visible. No tokens or account data are logged.
 
-Requests run one at a time, initially spaced by at least 350 ms. A 429 increases
-that spacing and honors the full `Retry-After`. An absent, invalid, or zero header
-stops immediately with an explicitly labeled 30-second local safety backoff; it
-does not promise Spotify will recover then. Valid short waits retry up to five
-times. Waits over 60 seconds stop promptly with the earliest retry time, rather
-than leaving the preview busy for hours. Exhausted retries stop further queued
-requests and the entire preview, keeping confirmation disabled.
+Spotify reads now pass through a restricted same-origin route on the existing
+localhost server. This makes the real `Retry-After` readable even when Spotify
+omits `Access-Control-Expose-Headers`. The relay accepts only allowlisted GET
+endpoints, rejects foreign origins/hosts and redirects, uses bounded timeouts,
+and never stores credentials or account responses on disk. PKCE/token refresh
+stay in the browser; confirmed writes still go directly to Spotify. Restart
+`npm start` after updating so the running server includes the relay.
 
-Cooldown timestamps survive reloads in this browser's local storage, scoped to
-the configured Client ID. If browser storage is unavailable, the current page
-still retains its cooldown. After the displayed time, build a fresh preview.
-Completed pages are not cached, so a new preview scans again. Other tabs consult
-stored cooldowns, but dispatch is serialized only within this page. Other apps
-or devices using the same Client ID can still consume its Spotify quota.
+The relay serializes reads across tabs and preserves a detected cooldown in
+memory. The browser persists cooldowns in local storage per Client ID. Long
+cooldowns stop promptly without replaying requests. If no usable retry header
+exists, the browser blocks further requests with an unknown deadline rather
+than guessing when Spotify will recover. **Check Spotify availability** permits
+one deliberate read of the playlist-list endpoint while the deadline is unknown.
+It never retries automatically and cannot bypass a known future deadline. A fresh
+unknown 429 enforces a 30-second local minimum between checks; this is not a Spotify
+recovery estimate. Success unlocks preview, but migration still requires a new
+complete preview. Failed checks retain the pause. Use **Record a cooldown from Spotify** to enter a
+verified local retry date/time from a prior response; this cannot shorten a
+known later deadline. Missing browser storage weakens persistence across reloads,
+but in-memory checks still apply while the page/server remains open.
 
-The regression suite uses simulated responses; it does not call Spotify. The
-related catalog's rate-limit behavior was checked and requires no companion edit.
+Transient HTTP 500/502/503/504 reads have at most two retries, after two and four
+seconds. Network failures, redirects, authentication errors, and writes are not
+replayed by the relay. Spotify's quota cannot be reset by reloading or restarting.
+
+Preview playlist pages are checkpointed in this tab's session storage, scoped to
+Client ID and account. Each resume checks a fresh snapshot; a changed version is
+read again. Completed playlists need only their snapshot checked, and partial
+playlists continue at the next page. Totals, repeated pages, and snapshots are
+validated before declaring completion. Checkpoints preserve occurrence counts,
+contain only URIs/progress, and are cleared on disconnect/tab close. Storage
+capacity failures fall back to in-memory progress. Playlist discovery and selected
+Liked Songs membership are always re-read; there is no safe version token for
+reusing their old state. Confirmed migration never uses checkpointed reads.
+
+### Why the library scanner appeared more resilient
+
+The comparison with commit `18b8dcc5445305907ea7f5581c9d37584cee69d9` showed the
+same playlist-list endpoint in the old app. That commit sent parallel metadata
+reads, capped retry waits at ten seconds, and continued through unreadable
+playlists. Reverting would not undo a server-side quota rejection and would
+restore those failure modes.
+
+The sibling catalog's Python client can read all HTTP response headers, records
+cooldowns, checkpoints pages in SQLite, and revalidates snapshots on resume.
+This app now adopts those principles without sharing credentials, files, or
+runtime code. Its checkpoints are browser-session data, not durable catalog
+backups. A larger total number of API reads does not establish a larger quota:
+client identity, timing, endpoint limits, and retained progress matter. The
+original quota trigger remains unproven; no live quota probe was used to test
+these changes. The sibling code/tests were inspected; no companion edit is needed.
 
 ## Related catalog project
 
@@ -152,4 +187,39 @@ The projects share these rules: preserve duplicate occurrences; classify unreada
 npm test
 ```
 
-Authentication uses Spotify's recommended Authorization Code with PKCE flow. Tokens remain in your browser's local storage; there is no backend and no Client Secret.
+Authentication uses Authorization Code with PKCE and no Client Secret. Tokens are retained by the browser; each read transiently passes its access token through the local relay to Spotify. The relay never logs or saves tokens.
+
+### Saved waits and request volume
+
+A saved cooldown disables Build preview and shows its deadline and countdown.
+Expiry unlocks the button without sending a request. Starting a new local server
+or reloading the page does not erase the saved wait. Until a profile read succeeds,
+the account row says that the account has not been checked.
+
+The per-page counter reports upstream read attempts returned by the local relay
+(including its bounded retries), and direct write attempts. A relay-blocked request
+counts as zero upstream attempts. This is not an app-wide Spotify quota meter.
+
+Commit `629a958a26e9ded45a660d21f543ac5a8a29c080` also fetched two track
+records before listing playlists. Its lack of pacing and continuation after failed
+playlist reads are not safe recovery strategies. The added Liked Songs and snapshot
+reads happen after playlist discovery, so they cannot explain an initial rejection
+of that list request. The original quota trigger has not been established.
+
+Discovery snapshots now replace the extra initial metadata read where available.
+New playlist scans still verify the snapshot after pagination; reused completed
+pages still require a fresh snapshot check. Confirmed migration never uses these
+preview checkpoints for its final safety checks.
+
+### Development quota shared with other projects
+
+Spotify's [July 23, 2026 announcement](https://developer.spotify.com/blog/2026-07-23-web-api-quota-updates)
+and [quota documentation](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
+state that Development Mode apps owned by one developer share quota, including
+across different Client IDs. Endpoints are grouped into shared quota buckets;
+Spotify does not publish their exact groupings or limits. `QUOTA_EXCEEDED`
+identifies quota exhaustion, distinct from the short rolling-window rate limit.
+If the music-library app belongs to the same developer, its traffic can consume
+quota used by this migrator. The captured response establishes exhaustion but
+does not establish which project consumed it or what today's response would be.
+The sibling's cooldown code was checked; no companion runtime edit is needed.

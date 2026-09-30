@@ -9,6 +9,7 @@ import {
     parseSpotifyInput,
     prepareLibraryMigration,
     createSpotifyQueue,
+    createPlaylistCheckpoints,
     runSafeMigration,
     trackUri,
 } from './spotify.js';
@@ -21,6 +22,7 @@ const redirectUri = `${location.origin}/`;
 
 const state = {
     token: null,
+    accountId: null,
     targets: [],
     libraryTarget: null,
     replacements: [],
@@ -29,6 +31,37 @@ const state = {
 
 let previewReady = false;
 let scanning = false;
+let executing = false;
+let pauseTimer;
+let readAttempts = 0;
+let writeAttempts = 0;
+let pauseAfterRequest = false;
+let checkingAvailability = false;
+
+function refreshPauseUI() {
+    const wait = queueSpotifyRequest.cooldownState();
+    const label = $('#cooldownStatus');
+    label.hidden = !wait.paused;
+    const activity = pauseAfterRequest ? 'no further request sent' : 'no request sent';
+    label.textContent = wait.unknown
+        ? `Paused: the saved retry time is unknown; ${activity}. Use Check Spotify availability for one read, or record a verified retry time below.`
+        : wait.paused
+          ? `Paused until ${new Date(wait.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}; ${activity}. ${Math.ceil((wait.retryAt - Date.now()) / 1000)} seconds remaining. This is a saved deadline, not a new Spotify rejection.`
+          : '';
+    $('#scan').disabled = wait.paused || scanning || executing || checkingAvailability;
+    $('#scan').textContent = wait.paused ? 'Paused' : 'Build preview';
+    if (wait.paused) $('#execute').disabled = true;
+    $('#checkAvailability').hidden = !wait.unknown;
+    $('#checkAvailability').disabled =
+        !state.token || checkingAvailability || scanning || executing || wait.probeAt > Date.now();
+    $('#checkAvailability').textContent = checkingAvailability
+        ? 'Checking…'
+        : wait.probeAt > Date.now()
+          ? `Check available in ${Math.ceil((wait.probeAt - Date.now()) / 1000)} seconds`
+          : 'Check Spotify availability';
+    if (pauseTimer) globalThis.clearTimeout?.(pauseTimer);
+    pauseTimer = wait.paused ? globalThis.setTimeout?.(refreshPauseUI, 1000) : null;
+}
 
 // Store only a cooldown timestamp, scoped to the configured app, never credentials.
 function cooldownKey() {
@@ -38,18 +71,43 @@ function cooldownKey() {
 const queueSpotifyRequest = createSpotifyQueue({
     readCooldown: () => {
         try {
-            return localStorage.getItem(cooldownKey());
+            return JSON.parse(localStorage.getItem(cooldownKey()) || '0');
         } catch {
             return 0;
         }
     },
     saveCooldown: (deadline) => {
         try {
-            localStorage.setItem(cooldownKey(), String(deadline));
+            localStorage.setItem(cooldownKey(), JSON.stringify(deadline));
         } catch {}
+        refreshPauseUI();
     },
     onWait: (delay, diagnostic) =>
         message(`${diagnostic} Paused for ${Math.ceil(delay / 1000)} seconds before retrying…`),
+});
+
+function checkpointKey(id) {
+    if (!state.accountId) return null;
+    return `spotify_preview:${localStorage.getItem('spotify_client_id')}:${state.accountId}:${id}`;
+}
+
+const inspectPreviewPlaylist = createPlaylistCheckpoints({
+    load: (id) => {
+        try {
+            const key = checkpointKey(id);
+            return key ? JSON.parse(sessionStorage.getItem(key) || 'null') : null;
+        } catch {
+            return null;
+        }
+    },
+    save: (id, value) => {
+        try {
+            const key = checkpointKey(id);
+            if (key) sessionStorage.setItem(key, JSON.stringify(value));
+        } catch {
+            // Storage limits do not turn an incomplete read into a complete one.
+        }
+    },
 });
 
 const $ = (s) => document.querySelector(s);
@@ -156,9 +214,24 @@ async function refresh() {
     }
 }
 
-async function api(path, options = {}) {
+async function api(path, options = {}, recoveryProbe = false) {
     const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
-    const response = await queueSpotifyRequest(
+    const target = new URL(url);
+    if (
+        target.origin !== 'https://api.spotify.com' ||
+        !target.pathname.startsWith('/v1/') ||
+        target.username ||
+        target.password ||
+        target.hash
+    ) {
+        throw new Error('Unexpected Spotify request destination refused.');
+    }
+    const readOnly = (options.method || 'GET').toUpperCase() === 'GET';
+    if (recoveryProbe && (!readOnly || path !== '/me/playlists?limit=1'))
+        throw new Error('Availability checks must use the read-only playlist endpoint.');
+    const requestUrl = readOnly ? `/spotify-read${target.pathname}${target.search}` : url;
+    const sendRequest = recoveryProbe ? queueSpotifyRequest.probeUnknown : queueSpotifyRequest;
+    const response = await sendRequest(
         async () => {
             if (
                 !state.token ||
@@ -167,14 +240,23 @@ async function api(path, options = {}) {
                 state.token = await refresh();
             }
             if (!state.token) throw new Error('Spotify session expired. Reconnect.');
-            return fetch(url, {
+            if (!readOnly) writeAttempts++;
+            const result = await fetch(requestUrl, {
                 ...options,
                 headers: {
                     Authorization: `Bearer ${state.token}`,
                     'Content-Type': 'application/json',
+                    ...(readOnly ? { 'X-Spotify-Relay': '1' } : {}),
+                    ...(recoveryProbe ? { 'X-Spotify-Read-Probe': '1' } : {}),
                     ...options.headers,
                 },
             });
+            if (result.status === 429) pauseAfterRequest = true;
+            const count = result.headers.get('X-Spotify-Upstream-Requests');
+            if (readOnly && count !== null && /^\d+$/.test(count)) readAttempts += Number(count);
+            $('#requestCount').textContent =
+                `This page: ${readAttempts} reported Spotify read attempts; ${writeAttempts} write attempts.`;
+            return result;
         },
         `${options.method || 'GET'} ${new URL(url).pathname.replace(
             /\/(tracks|albums|playlists)\/[^/]+/g,
@@ -186,6 +268,14 @@ async function api(path, options = {}) {
         try {
             detail = (await response.json()).error?.message || '';
         } catch {}
+        if (
+            readOnly &&
+            response.status === 404 &&
+            response.headers.get('X-Spotify-Relay-Response') !== '1'
+        ) {
+            detail =
+                'The local read relay is unavailable. Stop the old server with Ctrl+C and run npm start again.';
+        }
         const error = new Error(detail || `Spotify request failed (${response.status}).`);
         error.status = response.status;
         throw error;
@@ -249,7 +339,11 @@ async function inspectLibrary(uris) {
     return result;
 }
 async function scan() {
-    if (scanning) return;
+    if (scanning || executing || checkingAvailability) return;
+    if (queueSpotifyRequest.cooldownState().paused) {
+        refreshPauseUI();
+        return;
+    }
     scanning = true;
     previewReady = false;
     state.targets = [];
@@ -258,6 +352,7 @@ async function scan() {
         $('#scan').disabled = true;
         $('#execute').disabled = true;
         $('#preview').hidden = true;
+        queueSpotifyRequest.check();
         message('Validating releases and Liked Songs…');
         const resolved = await resolveInputs();
         state.replacements = resolved.replacements;
@@ -276,10 +371,7 @@ async function scan() {
             try {
                 contents.set(
                     playlists[i].id,
-                    await collectPages(
-                        `${API_BASE}/playlists/${playlists[i].id}/items?limit=50`,
-                        api,
-                    ),
+                    await inspectPreviewPlaylist(playlists[i].id, api, playlists[i].snapshot_id),
                 );
             } catch (error) {
                 if (error.status !== 403) throw error;
@@ -300,7 +392,28 @@ async function scan() {
         message(`Preview incomplete. ${error.message}`, 'error');
     } finally {
         scanning = false;
-        $('#scan').disabled = false;
+        refreshPauseUI();
+    }
+}
+async function checkAvailability() {
+    if (checkingAvailability || scanning || executing || !state.token) return;
+    if (!queueSpotifyRequest.cooldownState().unknown) return;
+    checkingAvailability = true;
+    previewReady = false;
+    $('#execute').disabled = true;
+    $('#preview').hidden = true;
+    refreshPauseUI();
+    try {
+        await api('/me/playlists?limit=1', {}, true);
+        message(
+            'Spotify accepted the availability check. Build a complete preview to continue.',
+            'success',
+        );
+    } catch (error) {
+        message(`Availability check stopped: ${error.message}`, 'error');
+    } finally {
+        checkingAvailability = false;
+        refreshPauseUI();
     }
 }
 async function inspectPlaylist(id) {
@@ -365,6 +478,7 @@ async function execute() {
     if (!previewReady || scanning) return;
     if (!state.targets.length && !state.libraryTarget?.affected) return;
     previewReady = false;
+    executing = true;
     $('#execute').disabled = true;
     $('#scan').disabled = true;
     try {
@@ -380,7 +494,7 @@ async function execute() {
                 `Stopped safely: ${library.error || 'Liked Songs could not be verified.'}`,
                 'error',
             );
-            $('#scan').disabled = false;
+            refreshPauseUI();
             return;
         }
         const outcome = await runSafeMigration(
@@ -407,7 +521,7 @@ async function execute() {
                 'Stopped safely: old Liked Songs membership was kept. Review the playlist result.',
                 'error',
             );
-            $('#scan').disabled = false;
+            refreshPauseUI();
             return;
         }
         const liked = await finishLibraryMigration(library, api, inspectLibrary),
@@ -424,14 +538,17 @@ async function execute() {
         );
         if (liked.phase === 'complete' || liked.phase === 'not-affected')
             status.className = 'status success';
-        $('#scan').disabled = false;
+        refreshPauseUI();
     } catch (error) {
         message(`Migration stopped: ${error.message}`, 'error');
     } finally {
-        $('#scan').disabled = false;
+        executing = false;
+        refreshPauseUI();
     }
 }
 async function init() {
+    $('#accountLabel').textContent = 'Spotify session saved; account not checked';
+    $('#account').hidden = true;
     $('#clientId').value = localStorage.getItem('spotify_client_id') || '';
     const params = new URLSearchParams(location.search);
     if (!params.get('code') && localStorage.getItem('spotify_scope_version') !== scopeVersion) {
@@ -451,18 +568,36 @@ async function init() {
     }
     $('#setup').hidden = Boolean(state.token);
     $('#swapper').hidden = !state.token;
-    if (state.token) {
+    refreshPauseUI();
+    if (state.token && !queueSpotifyRequest.cooldownState().paused) {
         try {
             const me = await api('/me');
-            $('#account').textContent = me.display_name || me.id;
+            state.accountId = me.id || me.account_id || null;
+            const name = me.display_name || me.id;
+            $('#accountLabel').textContent = name ? 'Connected as' : 'Spotify session saved';
+            $('#account').textContent = name || '';
+            $('#account').hidden = !name;
             message('Connected. Choose track or album mode.', 'success');
         } catch (error) {
-            $('#setup').hidden = false;
-            $('#swapper').hidden = true;
             message(error.message, 'error');
         }
     }
 }
+$('#recordCooldown').addEventListener('click', () => {
+    try {
+        queueSpotifyRequest.recordCooldown(new Date($('#retryTime').value).getTime());
+        previewReady = false;
+        $('#execute').disabled = true;
+        $('#preview').hidden = true;
+        message(
+            'Cooldown recorded. Build preview after that time; saved playlist pages will be revalidated.',
+        );
+    } catch (error) {
+        message(error.message, 'error');
+    }
+});
+$('#checkAvailability').addEventListener('click', checkAvailability);
+globalThis.addEventListener?.('storage', refreshPauseUI);
 $('#connect').addEventListener('click', login);
 $('#scan').addEventListener('click', scan);
 $('#execute').addEventListener('click', execute);
