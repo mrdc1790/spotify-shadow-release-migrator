@@ -177,6 +177,11 @@ these changes. The sibling code/tests were inspected; no companion edit is neede
 
 ## Related catalog project
 
+The [October 2 catalog integration and performance plan](UPDATED_PLAN.md)
+supersedes the earlier unmeasured scan-time estimates and concurrency proposal.
+It describes a future versioned discovery handoff, coverage-aware refresh, and
+measurement priorities; no catalog bridge is implemented by this documentation.
+
 [Personal Music Library](https://github.com/mrdc1790/personal-music-library) is the separate, evidence-preserving local catalog for read-only Spotify captures, historical snapshots, duplicate/overlap analysis, local-track references, and reconciliation research. This app is the narrower reviewed migration surface.
 
 The projects share these rules: preserve duplicate occurrences; classify unreadable playlists as unknown coverage; treat phone/desktop disagreement as evidence rather than a deletion signal; and keep preview read-only. They do not share code, runtime storage, OAuth credentials, or a Git upstream. A migration journal belongs with the catalog evidence, but neither app automatically reads or writes the other repository.
