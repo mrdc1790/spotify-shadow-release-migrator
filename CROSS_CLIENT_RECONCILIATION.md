@@ -50,6 +50,24 @@ The user's report that desktop likes include local songs and belief that the pho
 
 The local collection is explicitly in scope for the broader project. Spotify-returned playlist local references are only one part of it: include files never placed in a playlist, repeated references, copied/retagged/transcoded files, local/cloud candidates, and per-device discovery/presence/playback. Neither repository currently supplies the complete filesystem/phone reconciliation workflow. Local Files is not automatically a normal Web API playlist. This migrator does not transfer, delete, tag, or replace local audio.
 
+## Folder-audit discussion and project boundary
+
+The pasted [folder-audit discussion](https://chatgpt.com/share/6abf2b9e-166c-83ea-aca7-ee1c577ec61c)
+was reviewed on 2026-10-02. Its filesystem inventory, extension histogram,
+tag/format evidence, file history, and desktop Local Files comparison belong to
+the sibling catalog's [local inventory plan](https://github.com/mrdc1790/personal-music-library/blob/main/docs/LOCAL_INVENTORY.md).
+The catalog already supplies selected-root byte inventory and weak filename
+candidates; richer metadata and full desktop/device reconciliation remain planned.
+
+All-file totals, extension-selected audio paths, desktop-discovered local entries,
+and playlist occurrences measure different things. Their difference does not
+identify a missing-song set or authorize bulk additions/removals. Item-level
+comparisons require comparable captures and explicit coverage, including repeated
+and cloud entries. Whole-file hashes identify equal bytes; changed tags can alter
+the hash without changing the audio. Metadata similarity does not prove recording
+equivalence. This app remains the reviewed selected-Spotify-ID migration surface;
+it gains no filesystem scanner, SQLite dependency, or local-audio cleanup action.
+
 ## Shared duplicate and identity taxonomy
 
 | Category | Meaning and intended handling |
