@@ -177,10 +177,16 @@ these changes. The sibling code/tests were inspected; no companion edit is neede
 
 ## Related catalog project
 
-The [October 2 catalog integration and performance plan](UPDATED_PLAN.md)
-supersedes the earlier unmeasured scan-time estimates and concurrency proposal.
-It describes a future versioned discovery handoff, coverage-aware refresh, and
-measurement priorities; no catalog bridge is implemented by this documentation.
+The [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md) is authoritative for cross-project
+ownership, ordered steps, and acceptance criteria: documentation, manual trial,
+a versioned proposal file, read-only browser import, then outcome history.
+The catalog owns discovery, history, and evidence; this browser is the preferred
+future reviewed execution interface. No bridge is implemented. The catalog's
+existing Python migration commands retain their own restrictions; retirement
+requires a proven replacement workflow and recovery comparison.
+
+The [October 2 performance/design note](UPDATED_PLAN.md) retains benchmark and
+quota corrections; its implementation sequence is superseded by the shared roadmap.
 
 [Personal Music Library](https://github.com/mrdc1790/personal-music-library) is the separate, evidence-preserving local catalog for read-only Spotify captures, historical snapshots, duplicate/overlap analysis, local-track references, and reconciliation research. This app is the narrower reviewed migration surface.
 

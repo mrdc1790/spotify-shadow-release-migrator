@@ -6,6 +6,20 @@ Personal Music Library was reviewed at commit
 `ba6d7df625b7cdd23735184241424a5bb5590149`; companion browser documentation
 was read from main on October 2.
 
+## Current coordination — October 19, 2026
+
+The [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md) now owns the authoritative
+implementation order and acceptance criteria. Its sequence supersedes the
+October 2 sequence below: align docs, validate a manual workflow,
+specify a proposal contract, add read-only export/import, return outcomes, then
+consider incremental preview and executor consolidation. Those phases are planned
+except documentation alignment; no bridge or live trial was implemented here.
+
+The catalog owns discovery/history/evidence; the browser is the preferred future
+reviewed execution interface. Existing Python execution retains its restrictions
+and remains available pending a capability/recovery comparison. The corrections,
+performance caveats, and technical research below remain reference material.
+
 ## Current state
 
 The catalog already provides durable resumable SQLite capture, imported snapshot
@@ -43,7 +57,7 @@ and durable journal remain separate.
 - Complete API traversal establishes endpoint-scoped evidence, not universal
   desktop/phone Local Files or Liked Songs coverage.
 
-## Revised implementation order
+## October 2 implementation sequence (superseded)
 
 1. Resume the existing durable capture respecting its cooldown, validate useful
    coverage, and import a supported snapshot into the historical catalog. Keep
@@ -105,6 +119,7 @@ unsuitable as a full-library migration performance benchmark. The current
 catalog reference review records these differences; no account-backed runtime
 comparison was performed.
 
-Cross-repository impact was checked against the catalog's current documentation
-and lookup/scanner source. No companion edit is required: this documents a
-proposed interface and does not change either project's runtime behavior.
+The October 2 review checked the catalog documentation and lookup/scanner source.
+The October 19 documentation update checked both projects' current guidance and
+plans and links them to the shared roadmap; neither project's runtime behavior
+changed.

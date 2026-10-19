@@ -1,5 +1,11 @@
 ## Project Context: Spotify Shadow Releases, Relinking, Playlist Migration, and Local Music Database
 
+Current cross-repository sequencing and ownership are maintained in the
+[shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md). Follow it before the older proposals below:
+documentation and a manual trial precede a versioned file bridge. The catalog
+owns discovery/history/evidence; this browser is the preferred future execution
+interface. No bridge is implemented, and Python execution restrictions remain.
+
 I am a heavy Spotify power user with a very large library, thousands of local songs, hundreds of playlists, and roughly 45,000+ Liked Songs. I am building toward a larger personal Spotify/music-library database and potentially a Spotify wrapper/media-hub application. This particular subproject concerns one of Spotify's most frustrating data-model quirks: **silent re-releases / shadow releases / alternate Spotify track IDs for what is effectively the same recording.**
 
 This problem should eventually integrate with my broader local music database rather than become an isolated throwaway script.
