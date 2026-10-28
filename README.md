@@ -4,7 +4,7 @@ Safely replace a Spotify track—or an entire shadow re-release of an album—ac
 
 ## Implementation and plan status — October 27, 2026
 
-The local implementation includes persistent preview recovery, resume/stop,
+The committed implementation includes persistent preview recovery, resume/stop,
 progress and fallback reporting, and fresh validation before confirmed writes.
 The personal-library database was not extended or populated by that recovery
 work. A catalog exporter/browser importer and browser mutation journal remain
@@ -13,10 +13,9 @@ planned; recovery can be used without them. See the
 acceptance, and the remaining authenticated test for the supplied track pair.
 
 October 27 checks passed 65 migrator tests and 11 catalog tests. The October 22
-browser close/reopen smoke test was synthetic. These are local working-tree
-results, not a verified deployed release or successful account migration. No
-runtime code, personal database, OAuth setting, or Spotify membership was changed
-by this documentation refresh.
+browser close/reopen smoke test was synthetic. These checks do not establish a
+verified deployed release or successful account migration. The recovery code and
+plans are committed; see [work status](WORK_STATUS.md) for next actions and limits.
 
 ## What it does
 

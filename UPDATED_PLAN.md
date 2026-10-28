@@ -2,9 +2,9 @@
 
 Status reviewed against both local working trees on **October 27, 2026**. This
 updates the implementation sequence from the earlier handoff; it does not announce
-a published release. Existing uncommitted work is retained. This documentation
-refresh changes no runtime code, OAuth settings, personal database, or Spotify
-membership.
+a deployed release. The recovery implementation and planning work are now
+preserved in Git. This preservation pass changes no OAuth settings, personal
+database, or Spotify membership. See [work status](WORK_STATUS.md).
 
 ## Goal and supplied track pair
 
@@ -37,6 +37,15 @@ error/version/progress evidence; do not assign its cause from fixture results.
 The catalog is not a prerequisite for this browser recovery feature. Its database
 remains the intended long-lived evidence/query engine; IndexedDB is a recoverable
 preview cache. Keep their capture/enrichment jobs and credentials independent.
+
+## Shared sequence and next delivery details
+
+The [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md)
+owns phase ordering: manual trial and measurement, versioned proposal contract,
+read-only export/import, outcome history, then imported-evidence optimization.
+The steps below refine browser recovery and discovery acceptance within those
+phases. Initial import uses fresh browser discovery; step 6 describes later
+validated reuse. Outcome exchange remains planned and does not imply rollback.
 
 ## Next delivery sequence
 
@@ -127,6 +136,10 @@ owns its database delivery priorities. Dated external research in those document
 has not been revalidated by this local documentation review.
 
 ## Historical plan and research — October 2 and 19, 2026
+
+Retained from the previously published plan. Status statements in this section
+are dated history; the implementation checkpoint above and shared roadmap own
+current status and sequencing.
 
 This supersedes the September conversation's performance estimates and proposed
 integration. It is a design update, not an implemented bridge or live benchmark.
