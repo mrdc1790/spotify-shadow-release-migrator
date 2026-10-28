@@ -3,6 +3,7 @@ import { createSpotifyReadRelay, spotifyReadTarget } from './spotify-relay.js';
 import { readFileSync } from 'fs';
 import { runInNewContext } from 'vm';
 import * as spotify from './spotify.js';
+import { createPreviewStore } from './preview-store.js';
 import { rejects } from 'assert/strict';
 import {
     buildAuthorizationUrl,
@@ -350,11 +351,12 @@ test('network failures are never retried, and do not poison the queue', async ()
     equal(f.sleeps, [350]);
 });
 
-function appFixture(playlistStatus = 200, membership = [true, false], savedUntil = 0) {
+function appFixture(playlistStatus = 200, membership = [true, false], savedUntil = 0, overrides = {}) {
     let clock = Date.now();
     let timer;
     const storage = new Map([
-        ['spotify_cooldown:', JSON.stringify(savedUntil)],
+        ['spotify_cooldown:synthetic-client', JSON.stringify(savedUntil)],
+        ['spotify_client_id', 'synthetic-client'],
         ['spotify_scope_version', 'library-v1'],
     ]);
     class Clock extends Date {
@@ -385,6 +387,7 @@ function appFixture(playlistStatus = 200, membership = [true, false], savedUntil
     const calls = [];
     const context = {
         spotify,
+        createPreviewStore: overrides.createPreviewStore || createPreviewStore,
         Date: Clock,
         setTimeout: (callback) => {
             timer = callback;
@@ -406,7 +409,8 @@ function appFixture(playlistStatus = 200, membership = [true, false], savedUntil
             calls.push([url, options.method || 'GET']);
             let data;
             let status = 200;
-            if (/\/v1\/tracks\/[^/]+$/.test(url))
+            if (url.endsWith('/v1/me')) data = { id: 'synthetic-account' };
+            else if (/\/v1\/tracks\/[^/]+$/.test(url))
                 data = { name: url.endsWith('a'.repeat(22)) ? 'a' : 'b', artists: [] };
             else if (url.includes('/tracks?'))
                 throw new Error('Removed development-mode batch endpoint requested');
@@ -439,6 +443,7 @@ function appFixture(playlistStatus = 200, membership = [true, false], savedUntil
     // Run the real controller against a minimal DOM and mocked HTTP; no Spotify access.
     const source = readFileSync(new URL('./app.js', import.meta.url), 'utf8')
         .replace(/^import \{([\s\S]*?)\} from '.\/spotify.js';/, 'const {$1} = spotify;')
+        .replace("import { createPreviewStore } from './preview-store.js';", '')
         .replace(/init\(\);\s*$/, '')
         .replace(
             'createSpotifyQueue({',
@@ -457,6 +462,7 @@ function appFixture(playlistStatus = 200, membership = [true, false], savedUntil
         },
         element,
         calls,
+        originalFetch: context.fetch,
         setFetch: (fetch) => {
             context.fetch = fetch;
         },
@@ -467,7 +473,7 @@ test('preview stops at rate-limited playlist, blocks confirmation, and makes no 
     const app = appFixture(429);
     await Promise.all([app.scan(), app.scan()]);
     await app.execute();
-    equal(app.calls.length, 5);
+    equal(app.calls.length, 6);
     equal(
         app.calls.every(([, method]) => method === 'GET'),
         true,
@@ -504,7 +510,7 @@ test('incomplete membership and malformed pages fail closed', async () => {
     const app = appFixture(200, [true]);
     await app.scan();
     equal(app.element('#execute').disabled, true);
-    equal(app.calls.length, 4);
+    equal(app.calls.length, 5);
     await rejects(
         spotify.collectPages('/page', async () => ({ next: null })),
         /incomplete/,
@@ -546,7 +552,7 @@ test('track preview uses individual development-mode endpoints, never the remove
     const app = appFixture();
     await app.scan();
     equal(
-        app.calls.slice(0, 2).map(([url]) => new URL(url, 'http://localhost').pathname),
+        app.calls.filter(([url]) => /\/tracks\//.test(url)).map(([url]) => new URL(url, 'http://localhost').pathname),
         ['/spotify-read/v1/tracks/' + 'a'.repeat(22), '/spotify-read/v1/tracks/' + 'b'.repeat(22)],
     );
     equal(
@@ -559,7 +565,8 @@ test('track preview uses individual development-mode endpoints, never the remove
 test('429 diagnostics identify the operation without IDs or query parameters', async () => {
     const app = appFixture();
     let calls = 0;
-    app.setFetch(async () => {
+    app.setFetch(async (url, options) => {
+        if (url.endsWith('/v1/me')) return app.originalFetch(url, options);
         calls++;
         return limited(null);
     });
@@ -918,7 +925,7 @@ test('saved cooldown prevents startup reads and expires without automatic traffi
     equal(app.calls.length, 0);
 });
 
-test('playlist discovery snapshot saves a read while final verification remains', async () => {
+test('fresh playlist version precedes pages and unchanged contents need only one check', async () => {
     const calls = [];
     const inspect = spotify.createPlaylistCheckpoints();
     const request = async (url) => {
@@ -927,12 +934,14 @@ test('playlist discovery snapshot saves a read while final verification remains'
             ? { items: [{ item: { uri: 'a' } }], total: 1, next: null }
             : { snapshot_id: 'v1' };
     };
-    await inspect('one', request, 'v1');
-    equal(calls.length, 2);
-    equal(calls[0].includes('/items?'), true);
-    await inspect('one', request, 'v1');
+    await inspect('one', request);
     equal(calls.length, 3);
+    equal(calls[0].includes('snapshot_id'), true);
+    equal(calls[1].includes('/items?'), true);
     equal(calls[2].includes('snapshot_id'), true);
+    await inspect('one', request);
+    equal(calls.length, 4);
+    equal(calls[3].includes('snapshot_id'), true);
 });
 
 test('availability relay probe makes one upstream attempt even for a server error', async () => {
@@ -1024,6 +1033,524 @@ test('unknown saved wait has one read-only recovery and still requires a complet
     await rejects(app.api('/me/library', { method: 'PUT' }, true), /read-only/);
 });
 
+test('Spotify user-playlist next links stay scoped to the authenticated playlist list', async () => {
+    await withRelay(
+        async (url) => {
+            equal(url.pathname, '/v1/me/playlists');
+            equal(url.searchParams.get('offset'), '50');
+            equal(url.searchParams.get('limit'), '50');
+            return { status: 200, headers: {}, body: '{"items":[],"next":null}' };
+        },
+        async (request) => {
+            const response = await request(
+                '/spotify-read/v1/users/synthetic-user/playlists?offset=50&limit=50',
+            );
+            equal(response.status, 200);
+        },
+    );
+    await rejects(
+        async () => spotifyReadTarget('https://foreign.example/v1/users/synthetic/playlists'),
+        /Unsupported/,
+    );
+    await rejects(async () => spotifyReadTarget('/v1/users/synthetic'), /Unsupported/);
+});
+
+test('relay distinguishes network permissions from quota without revealing raw errors', async () => {
+    await withRelay(
+        async () => {
+            throw Object.assign(new Error('synthetic-test-token private details'), {
+                code: 'EACCES',
+            });
+        },
+        async (request) => {
+            const response = await request();
+            equal(response.status, 502);
+            equal(response.body.includes('blocked from connecting'), true);
+            equal(response.body.includes('synthetic-test-token'), false);
+            equal(response.body.includes('private details'), false);
+        },
+    );
+});
+
+test('changed playlist retries once with fresh pages and preserves duplicate occurrences', async () => {
+    let metadata = 0;
+    let pages = 0;
+    let changes = 0;
+    const stored = new Map();
+    const inspect = spotify.createPlaylistCheckpoints({
+        load: (id) => stored.get(id),
+        save: (id, value) => stored.set(id, structuredClone(value)),
+    });
+    const request = async (url) => {
+        if (url.includes('fields=')) return { snapshot_id: ++metadata === 1 ? 'old' : 'new' };
+        pages++;
+        return {
+            items:
+                pages === 1
+                    ? [{ item: { uri: 'old' } }]
+                    : [{ item: { uri: 'new' } }, { item: { uri: 'new' } }],
+            total: pages === 1 ? 1 : 2,
+            next: null,
+        };
+    };
+    const rows = await inspect('p', request, () => changes++);
+    equal(rows.map(spotify.itemUri), ['new', 'new']);
+    equal(pages, 2);
+    equal(changes, 1);
+    equal(stored.get('p').snapshot, 'new');
+    const resumed = await spotify.createPlaylistCheckpoints({ load: (id) => stored.get(id) })(
+        'p',
+        request,
+    );
+    equal(resumed.map(spotify.itemUri), ['new', 'new']);
+    equal(pages, 2);
+});
+
+test('changing page total restarts only after a verified version change', async () => {
+    let metadata = 0;
+    let pages = 0;
+    const rows = await spotify.createPlaylistCheckpoints()('p', async (url) => {
+        if (url.includes('fields=')) return { snapshot_id: ++metadata === 1 ? 'old' : 'new' };
+        pages++;
+        if (pages === 1) return {
+            items: [{ item: { uri: 'old' } }],
+            total: 2,
+            next: `${spotify.API_BASE}/playlists/p/items?limit=50&offset=1`,
+        };
+        return { items: [{ item: { uri: 'new' } }], total: 1, next: null };
+    });
+    equal(rows.map(spotify.itemUri), ['new']);
+    equal(pages, 3);
+});
+
+test('persistently changing playlist stays unresolved while other playlists finish', async () => {
+    const app = appFixture();
+    let snapshots = 0;
+    app.setFetch(async (url, options) => {
+        if (url.includes('/playlists/p1?fields='))
+            return {
+                status: 200,
+                ok: true,
+                headers: { get: () => null },
+                json: async () => ({ snapshot_id: String(++snapshots) }),
+            };
+        return app.originalFetch(url, options);
+    });
+    await app.scan();
+    equal(snapshots, 4);
+    equal(
+        app.calls.some(([url]) => url.includes('/playlists/p2/items')),
+        true,
+    );
+    equal(app.element('#preview').hidden, false);
+    equal(app.element('#execute').disabled, true);
+    equal(app.element('#status').textContent.includes('unresolved'), true);
+    await app.execute();
+    equal(
+        app.calls.every(([, method]) => method === 'GET'),
+        true,
+    );
+});
+
+function indexedDBFixture({ failCommit = false, failOpen = false, holdCommit = false } = {}) {
+    let records = new Map();
+    const pending = [];
+    const copy = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    const database = {
+        close() {},
+        createObjectStore() {},
+        transaction() {
+            const staged = new Map(records);
+            let aborted = false;
+            const tx = {
+                abort() {
+                    aborted = true;
+                    queueMicrotask(() => tx.onabort?.());
+                },
+                objectStore: () => ({
+                    get(key) {
+                        const request = {};
+                        queueMicrotask(() => {
+                            request.result = copy(records.get(key));
+                            request.onsuccess?.();
+                        });
+                        return request;
+                    },
+                    put: (value, key) => staged.set(key, copy(value)),
+                    delete: (key) => staged.delete(key),
+                    openCursor() {
+                        const request = {};
+                        const keys = [...staged.keys()];
+                        function next() {
+                            queueMicrotask(() => {
+                                const key = keys.shift();
+                                request.result = key === undefined ? null : {
+                                    key,
+                                    delete: () => staged.delete(key),
+                                    continue: next,
+                                };
+                                request.onsuccess?.();
+                            });
+                        }
+                        next();
+                        return request;
+                    },
+                }),
+            };
+            const commit = () => {
+                if (aborted) return;
+                if (failCommit) tx.onabort?.();
+                else {
+                    records = staged;
+                    tx.oncomplete?.();
+                }
+            };
+            if (holdCommit) pending.push(commit);
+            else setImmediate(commit);
+            return tx;
+        },
+    };
+    return {
+        indexedDB: {
+            open() {
+                const request = {};
+                queueMicrotask(() => {
+                    if (failOpen) request.onerror?.();
+                    else {
+                        request.result = database;
+                        request.onsuccess?.();
+                    }
+                });
+                return request;
+            },
+        },
+        commit: () => pending.splice(0).forEach((commit) => commit()),
+    };
+}
+
+function sessionFixture() {
+    const values = new Map();
+    return {
+        getItem: (key) => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value),
+        removeItem: (key) => values.delete(key),
+    };
+}
+
+test('durable checkpoint waits for commit and survives a new store and empty session', async () => {
+    const fixture = indexedDBFixture({ holdCommit: true });
+    const store = createPreviewStore(fixture);
+    let settled = false;
+    const save = store.save('app:account:p', { rows: ['a', 'a', 'b'] }).then(() => {
+        settled = true;
+    });
+    await new Promise(setImmediate);
+    equal(settled, false);
+    fixture.commit();
+    await save;
+    const reloaded = createPreviewStore({ ...fixture, sessionStorage: sessionFixture() });
+    const loaded = reloaded.load('app:account:p');
+    await new Promise(setImmediate);
+    fixture.commit();
+    equal(await loaded, { rows: ['a', 'a', 'b'] });
+});
+
+test('database abort falls back visibly to session storage without claiming durability', async () => {
+    const fixture = indexedDBFixture({ failCommit: true });
+    const sessionStorage = sessionFixture();
+    const status = [];
+    const store = createPreviewStore({ ...fixture, sessionStorage, onStatus: (text) => status.push(text) });
+    await store.save('key', { complete: false, rows: ['a', 'a'] });
+    equal(status[status.length - 1].startsWith('Session storage only'), true);
+    equal(await store.load('key'), { complete: false, rows: ['a', 'a'] });
+    equal(status.some((text) => text.includes('including after tab close')), false);
+});
+
+test('unavailable stores report memory fallback and do not lose same-tab checkpoint reuse', async () => {
+    const status = [];
+    const storageError = () => {
+        throw new Error('private storage detail');
+    };
+    const store = createPreviewStore({
+        indexedDB: undefined,
+        sessionStorage: { getItem: storageError, setItem: storageError },
+        onStatus: (text) => status.push(text),
+    });
+    const inspect = spotify.createPlaylistCheckpoints({ load: store.load, save: store.save });
+    let pages = 0;
+    const request = async (url) => {
+        if (url.includes('fields=')) return { snapshot_id: 'v' };
+        pages++;
+        return { items: [{ item: { uri: 'a' } }], total: 1, next: null };
+    };
+    await inspect('p', request);
+    await inspect('p', request);
+    equal(pages, 1);
+    equal(status[status.length - 1].startsWith('Memory only'), true);
+    equal(status.some((text) => text.includes('private storage detail')), false);
+});
+
+test('session checkpoints are promoted and persistent data remains account and app scoped', async () => {
+    const fixture = indexedDBFixture();
+    const sessionStorage = sessionFixture();
+    sessionStorage.setItem('app1:account1:p', JSON.stringify({ rows: ['old', 'old'] }));
+    const store = createPreviewStore({ ...fixture, sessionStorage });
+    equal(await store.load('app1:account1:p'), { rows: ['old', 'old'] });
+    equal(sessionStorage.getItem('app1:account1:p'), null);
+    equal(await store.load('app1:account2:p'), null);
+    equal(await store.load('app2:account1:p'), null);
+    await store.save('app2:account1:p', { rows: ['other'] });
+    await store.clear('app1:');
+    equal(await store.load('app1:account1:p'), null);
+    equal(await store.load('app2:account1:p'), { rows: ['other'] });
+});
+
+test('blocked database opening is bounded and falls back without waiting on Spotify', async () => {
+    const status = [];
+    const store = createPreviewStore({
+        indexedDB: { open: () => ({}) },
+        sessionStorage: sessionFixture(),
+        timeout: 5,
+        onStatus: (text) => status.push(text),
+    });
+    await store.save('key', { rows: [] });
+    equal(status[status.length - 1].startsWith('Session storage only'), true);
+});
+
+test('supplied Tape B links produce a read-only preview and expose resume progress', async () => {
+    const sourceId = '5DdmY05GZLzvkvbAHrUVYv';
+    const destinationId = '3xm40MKtw5Xu7FeBmruQWZ';
+    const app = appFixture();
+    app.element('#source').value = `https://open.spotify.com/track/${sourceId}?si=05870a053443435e`;
+    app.element('#destination').value = `https://open.spotify.com/track/${destinationId}?si=b1368c5afb8e44a0`;
+    app.setFetch(async (url, options) => {
+        const result = await app.originalFetch(url, options);
+        if (url.includes('/items?')) result.json = async () => ({
+            items: [sourceId, sourceId, destinationId].map((id) => ({ item: { uri: spotify.trackUri(id) } })),
+            total: 3,
+            next: null,
+        });
+        return result;
+    });
+    await app.scan();
+    equal(app.element('#execute').disabled, false);
+    equal(app.element('#targetCount').textContent, 2);
+    equal(app.element('#sourceName').textContent.includes(sourceId), true);
+    equal(app.element('#destinationName').textContent.includes(destinationId), true);
+    equal(app.element('#scanProgress').textContent.includes('2 pages fetched'), true);
+    await app.scan();
+    equal(app.element('#scanProgress').textContent.includes('2 reused'), true);
+    equal(app.element('#scanProgress').textContent.includes('0 pages fetched'), true);
+    equal(app.calls.some(([url]) => url.endsWith(`/tracks/${sourceId}`)), true);
+    equal(app.calls.some(([url]) => url.endsWith(`/tracks/${destinationId}`)), true);
+    equal(app.calls.every(([, method]) => method === 'GET'), true);
+});
+
+test('scan after cooldown checks account identity before caching and fails closed if absent', async () => {
+    const app = appFixture(200, [true, false], Date.now() + 60000);
+    await app.init();
+    app.advance(61000);
+    app.setFetch(async (url, options) => {
+        const result = await app.originalFetch(url, options);
+        if (url.endsWith('/v1/me')) result.json = async () => ({});
+        return result;
+    });
+    await app.scan();
+    equal(app.calls.length, 1);
+    equal(app.calls[0][0].endsWith('/v1/me'), true);
+    equal(app.element('#execute').disabled, true);
+    equal(app.element('#status').textContent.includes('account identity'), true);
+});
+
+test('stop keeps the current successful page and resume revalidates before continuing', async () => {
+    const app = appFixture();
+    let stopped = false;
+    app.setFetch(async (url, options) => {
+        const result = await app.originalFetch(url, options);
+        if (url.includes('/playlists/p1/items?') && !stopped) {
+            stopped = true;
+            app.element('#stopScan').onclick();
+        }
+        return result;
+    });
+    await app.scan();
+    equal(app.element('#execute').disabled, true);
+    equal(app.calls.some(([url]) => url.includes('/playlists/p2/')), false);
+    const pageReads = app.calls.filter(([url]) => url.includes('/playlists/p1/items?')).length;
+    await app.scan();
+    equal(app.element('#execute').disabled, false);
+    equal(app.calls.filter(([url]) => url.includes('/playlists/p1/items?')).length, pageReads);
+    equal(app.element('#scanProgress').textContent.includes('1 resumed'), true);
+    equal(app.calls.every(([, method]) => method === 'GET'), true);
+});
+
+test('581-playlist fixture resumes after reload and discovers a changed formerly negative playlist', async () => {
+    const stored = new Map();
+    const source = 'spotify:track:5DdmY05GZLzvkvbAHrUVYv';
+    const destination = 'spotify:track:3xm40MKtw5Xu7FeBmruQWZ';
+    let retry = false;
+    const calls = [];
+    const events = [];
+    const options = {
+        load: async (id) => stored.get(id),
+        save: async (id, value) => stored.set(id, JSON.parse(JSON.stringify(value))),
+        onProgress: (event) => events.push(event),
+    };
+    const request = async (url) => {
+        calls.push(url);
+        const id = new URL(url).pathname.split('/')[3];
+        if (url.includes('fields=')) return { snapshot_id: retry && id === 'p7' ? 'v2' : 'v1' };
+        if (id === 'p400') {
+            if (!url.includes('offset=')) return {
+                items: [source, source].map((uri) => ({ item: { uri } })),
+                total: 3,
+                next: `${spotify.API_BASE}/playlists/p400/items?limit=50&offset=2`,
+            };
+            if (!retry) throw new Error('Synthetic timeout');
+            return { items: [{ item: { uri: destination } }], total: 3, next: null };
+        }
+        const uris = id === 'p7' && !retry ? [destination] : [source, source, destination];
+        return { items: uris.map((uri) => ({ item: { uri } })), total: uris.length, next: null };
+    };
+    const first = spotify.createPlaylistCheckpoints(options);
+    await rejects((async () => {
+        for (let i = 0; i < 581; i++) await first(`p${i}`, request);
+    })(), /Synthetic timeout/);
+    equal(stored.get('p400').rows.length, 2);
+    equal(stored.get('p400').complete, false);
+    retry = true;
+    calls.length = 0;
+    events.length = 0;
+    const afterReload = spotify.createPlaylistCheckpoints(options);
+    const contents = new Map();
+    for (let i = 0; i < 581; i++) contents.set(`p${i}`, await afterReload(`p${i}`, request));
+    equal(events.filter((event) => event.type === 'reused').length, 399);
+    equal(events.filter((event) => event.type === 'resumed').length, 1);
+    equal(events.filter((event) => event.type === 'changed').length, 1);
+    equal(events.filter((event) => event.type === 'page').length, 182);
+    equal(calls.length, 945);
+    const targets = spotify.findTargets([{ id: 'p7' }, { id: 'p400' }], contents, [{ sourceUri: source, destinationUri: destination }]);
+    equal(targets.map((target) => target.sourceCounts[source]), [2, 2]);
+    equal(targets.map((target) => target.destinationCounts[destination]), [1, 1]);
+});
+
+function savedPreviewFixture(records) {
+    return {
+        createPreviewStore: () => ({
+            load: async (key) => records.has(key) ? JSON.parse(JSON.stringify(records.get(key))) : null,
+            save: async (key, value) => records.set(key, JSON.parse(JSON.stringify(value))),
+        }),
+    };
+}
+
+test('immutable account identity is used while legacy profile checkpoints are promoted', async () => {
+    const saved = new Map([['spotify_preview:synthetic-client:legacy-profile:p1', {
+        snapshot: 'v1',
+        rows: [{ item: { uri: 'spotify:track:' + 'a'.repeat(22) } }],
+        seen: [`${spotify.API_BASE}/playlists/p1/items?limit=50`],
+        next: null,
+        total: 1,
+        complete: true,
+    }]]);
+    const app = appFixture(200, [true, false], 0, savedPreviewFixture(saved));
+    app.setFetch(async (url, options) => {
+        const result = await app.originalFetch(url, options);
+        if (url.endsWith('/v1/me')) result.json = async () => ({ id: 'legacy-profile', account_id: 'stable-account' });
+        return result;
+    });
+    await app.scan();
+    equal(app.element('#execute').disabled, false);
+    equal(saved.has('spotify_preview:synthetic-client:stable-account:p1'), true);
+    equal(app.calls.some(([url]) => url.includes('/playlists/p1/items?')), false);
+    equal(app.element('#scanProgress').textContent.includes('1 reused'), true);
+});
+
+test('saved draft restores inputs after reopen without restoring migration approval', async () => {
+    const draft = {
+        version: 1,
+        kind: 'track',
+        source: 'spotify:track:5DdmY05GZLzvkvbAHrUVYv',
+        destination: 'spotify:track:3xm40MKtw5Xu7FeBmruQWZ',
+    };
+    const saved = new Map([['spotify_preview:synthetic-client:synthetic-account:draft', draft]]);
+    const app = appFixture(200, [true, false], 0, savedPreviewFixture(saved));
+    app.element('#source').value = '';
+    app.element('#destination').value = '';
+    await app.init();
+    equal(app.element('#source').value, draft.source);
+    equal(app.element('#destination').value, draft.destination);
+    equal(app.element('#scan').textContent, 'Resume preview');
+    equal(app.element('#preview').hidden, true);
+    equal(app.element('#execute').disabled, true);
+    equal(app.calls.length, 1);
+    await app.execute();
+    equal(app.calls.length, 1);
+});
+
+test('editing the selected mapping invalidates an earlier complete preview', async () => {
+    const app = appFixture();
+    await app.scan();
+    const reads = app.calls.length;
+    app.element('#destination').value = 'c'.repeat(22);
+    app.element('#destination').oninput();
+    equal(app.element('#execute').disabled, true);
+    equal(app.element('#preview').hidden, true);
+    await app.execute();
+    equal(app.calls.length, reads);
+});
+
+test('saved draft survives a paused startup and resumes after the cooldown expires', async () => {
+    const draft = {
+        version: 1,
+        kind: 'track',
+        source: 'spotify:track:5DdmY05GZLzvkvbAHrUVYv',
+        destination: 'spotify:track:3xm40MKtw5Xu7FeBmruQWZ',
+    };
+    const key = 'spotify_preview:synthetic-client:synthetic-account:draft';
+    const saved = new Map([[key, draft]]);
+    const app = appFixture(200, [true, false], Date.now() + 60000, savedPreviewFixture(saved));
+    app.element('#source').value = '';
+    app.element('#destination').value = '';
+    await app.init();
+    equal(app.calls.length, 0);
+    app.advance(61000);
+    await app.scan();
+    equal(app.element('#execute').disabled, false);
+    equal(app.element('#source').value, draft.source);
+    equal(app.element('#destination').value, draft.destination);
+    equal(saved.get(key).source, draft.source);
+    equal(saved.get(key).destination, draft.destination);
+    equal(saved.get(key).kind, draft.kind);
+    equal(saved.get(key).version, draft.version);
+    equal(app.calls.every(([, method]) => method === 'GET'), true);
+});
+
+test('cached and returned pagination cannot read a different playlist or foreign host', async () => {
+    for (const next of [
+        'https://foreign.invalid/v1/playlists/p/items?offset=1',
+        `${spotify.API_BASE}/playlists/other/items?offset=1`,
+    ]) {
+        const calls = [];
+        const saved = {
+            snapshot: 'v',
+            rows: [{ item: { uri: 'stale' } }],
+            seen: [`${spotify.API_BASE}/playlists/p/items?limit=50`],
+            total: 2,
+            next,
+            complete: false,
+        };
+        const inspect = spotify.createPlaylistCheckpoints({ load: async () => saved });
+        await rejects(inspect('p', async (url) => {
+            calls.push(url);
+            return url.includes('fields=') ? { snapshot_id: 'v' } : {
+                items: [{ item: { uri: 'fresh' } }], total: 2, next,
+            };
+        }), /pagination/);
+        equal(calls.includes(next), false);
+        equal(calls.length, 2);
+    }
+});
+
 let failures = 0;
 for (const [n, f] of tests) {
     try {
@@ -1035,3 +1562,4 @@ for (const [n, f] of tests) {
     }
 }
 if (failures) process.exitCode = 1;
+console.log(`${tests.length - failures}/${tests.length} tests passed.`);

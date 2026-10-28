@@ -11,6 +11,7 @@ const files = new Map([
     ['/index.html', 'index.html'],
     ['/app.js', 'app.js'],
     ['/spotify.js', 'spotify.js'],
+    ['/preview-store.js', 'preview-store.js'],
     ['/styles.css', 'styles.css'],
 ]);
 const types = {
@@ -52,6 +53,8 @@ server.on('error', (error) => {
     console.error(
         error.code === 'EADDRINUSE'
             ? `Port ${port} is already in use. If the migrator is already running, stop that server with Ctrl+C before restarting it.`
+            : error.code === 'EACCES'
+              ? `This computer refused localhost port ${port}. On Windows, check reserved ranges with: netsh interface ipv4 show excludedportrange protocol=tcp. Choose an available PORT and register that exact localhost redirect URI in your Spotify app.`
             : `Local server failed (${error.code || 'unknown error'}).`,
     );
     process.exitCode = 1;

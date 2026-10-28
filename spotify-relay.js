@@ -5,21 +5,37 @@ const allowedPath =
 
 export function spotifyReadTarget(rawPath) {
     const url = new URL(rawPath, 'https://api.spotify.com');
+    const userPlaylistPage = /^\/v1\/users\/[^/]+\/playlists$/.test(url.pathname);
     if (
         url.origin !== 'https://api.spotify.com' ||
         url.username ||
         url.password ||
         url.hash ||
-        !allowedPath.test(url.pathname)
+        (!allowedPath.test(url.pathname) && !userPlaylistPage)
     ) {
         throw new Error('Unsupported Spotify read endpoint.');
     }
+    // Spotify returns this alias in current-user pagination. Keep reads scoped
+    // to the authenticated user instead of allowing arbitrary user lookup.
+    if (userPlaylistPage) url.pathname = '/v1/me/playlists';
     for (const [key, value] of url.searchParams) {
         if (
             !['limit', 'offset', 'market', 'fields', 'uris', 'additional_types'].includes(key) ||
             url.searchParams.getAll(key).length !== 1
         ) {
-            throw new Error('Unsupported Spotify query.');
+            const name = [
+                'locale',
+                'ids',
+                'limit',
+                'offset',
+                'market',
+                'fields',
+                'uris',
+                'additional_types',
+            ].includes(key)
+                ? key
+                : 'unrecognized parameter';
+            throw new Error(`Unsupported Spotify query (${name}).`);
         }
         if (key === 'fields' && value !== 'snapshot_id') throw new Error('Unsupported fields.');
         if (['limit', 'offset'].includes(key) && !/^\d{1,8}$/.test(value)) {
@@ -122,8 +138,14 @@ export function createSpotifyReadRelay({
         let target;
         try {
             target = spotifyReadTarget(req.url.slice('/spotify-read'.length));
-        } catch {
-            send(res, 400, JSON.stringify({ error: { message: 'Unsupported Spotify read.' } }));
+        } catch (error) {
+            const safeMessage =
+                /^Unsupported Spotify (read endpoint|query \((locale|ids|limit|offset|market|fields|uris|additional_types|unrecognized parameter)\))\.$|^Unsupported fields\.$|^Invalid (pagination|membership query)\.$/.test(
+                    error.message,
+                )
+                    ? error.message
+                    : 'Unsupported Spotify read.';
+            send(res, 400, JSON.stringify({ error: { message: safeMessage } }));
             return;
         }
         const queued = tail.then(async () => {
@@ -181,13 +203,30 @@ export function createSpotifyReadRelay({
                     return;
                 }
                 send(res, response.status, response.body, headers);
-            } catch {
+            } catch (error) {
+                const code = [
+                    'EACCES',
+                    'EPERM',
+                    'ENOTFOUND',
+                    'EAI_AGAIN',
+                    'ECONNREFUSED',
+                    'ECONNRESET',
+                    'ETIMEDOUT',
+                    'CERT_HAS_EXPIRED',
+                    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+                    'DEPTH_ZERO_SELF_SIGNED_CERT',
+                ].includes(error.code)
+                    ? error.code
+                    : 'UNKNOWN';
                 send(
                     res,
                     502,
                     JSON.stringify({
                         error: {
-                            message: 'Spotify read failed or timed out. No write was attempted.',
+                            message:
+                                code === 'EACCES' || code === 'EPERM'
+                                    ? 'The local server is blocked from connecting to Spotify. Restart it in a terminal with network access. No write was attempted.'
+                                    : `Spotify connection failed (${code}). No write was attempted.`,
                         },
                     }),
                     { 'X-Spotify-Upstream-Requests': String(attempts) },

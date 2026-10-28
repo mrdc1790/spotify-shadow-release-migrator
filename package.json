@@ -5,7 +5,8 @@
     "type": "module",
     "scripts": {
         "start": "node server.js",
-        "test": "node spotify.test.js"
+        "test": "node spotify.test.js",
+        "test:browser": "node browser-smoke.js"
     },
     "engines": {
         "node": ">=14"

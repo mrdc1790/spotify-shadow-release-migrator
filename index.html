@@ -22,7 +22,7 @@
                     <h2>Connect Spotify</h2>
                     <p>
                         Create an app in the Spotify Developer Dashboard and register
-                        <code>http://127.0.0.1:5173/</code> as its redirect URI.
+                        <code id="redirectUri">http://127.0.0.1:5173/</code> as its redirect URI.
                     </p>
                     <label for="clientId">Spotify Client ID</label>
                     <div class="row">
@@ -71,6 +71,11 @@
                         id="destination"
                         placeholder="Spotify URL, URI, or 22-character ID"
                     /><button id="scan">Build preview</button>
+                    <button id="stopScan" class="quiet" hidden>Stop scan</button>
+                    <p id="cacheStatus" class="fine" aria-live="polite">
+                        Preview progress is saved locally when browser storage is available.
+                    </p>
+                    <p id="scanProgress" class="fine" aria-live="polite" hidden></p>
                 </div>
             </section>
             <section id="preview" class="card" hidden>
@@ -90,11 +95,12 @@
                     <p>
                         <strong id="targetCount">0</strong> affected playlists ·
                         <span id="likedStatus">checking Liked Songs</span> ·
-                        <span id="skippedCount">0</span> unreadable playlists<span
+                        <span id="skippedCount">0</span> unresolved playlists<span
                             id="skippedDetail"
                         ></span>
                     </p>
                     <ul id="playlistList"></ul>
+                    <ul id="unresolvedList" aria-label="Unresolved playlists"></ul>
                     <button id="execute" class="danger">Confirm migration</button>
                 </div>
             </section>
@@ -105,13 +111,14 @@
             </p>
             <p id="status" class="status" aria-live="polite">Ready.</p>
             <details class="fine">
-                <summary>Record a cooldown from Spotify</summary>
+                <summary>Optional: record a retry deadline from Spotify</summary>
                 <p>
-                    The local server reads Spotify's retry header automatically. If you already have
-                    a retry deadline from a previous response, enter it here in your local time
-                    zone. This records a wait; it does not clear Spotify's quota restriction.
-                    Reloading preserves the wait. Rebuilding a preview rechecks saved playlist
-                    snapshots and resumes unchanged pages.
+                    You do not need to fill this in to build a preview. The local server reads
+                    Spotify's retry header automatically. Only if you already have a retry deadline
+                    from a previous response, enter it here in your local time zone. This records a
+                    wait; it does not clear Spotify's quota restriction. Reloading preserves the
+                    wait. Rebuilding a preview rechecks saved playlist snapshots and resumes
+                    unchanged pages.
                 </p>
                 <label for="retryTime">Verified retry time</label>
                 <input id="retryTime" type="datetime-local" step="1" />

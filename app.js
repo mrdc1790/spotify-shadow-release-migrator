@@ -13,6 +13,7 @@ import {
     runSafeMigration,
     trackUri,
 } from './spotify.js';
+import { createPreviewStore } from './preview-store.js';
 const scopes =
     'playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read user-library-modify';
 
@@ -23,6 +24,7 @@ const redirectUri = `${location.origin}/`;
 const state = {
     token: null,
     accountId: null,
+    legacyAccountId: null,
     targets: [],
     libraryTarget: null,
     replacements: [],
@@ -37,6 +39,11 @@ let readAttempts = 0;
 let writeAttempts = 0;
 let pauseAfterRequest = false;
 let checkingAvailability = false;
+let resumeAvailable = false;
+let stopRequested = false;
+let progress;
+let previewInspector;
+let previewScope;
 
 function refreshPauseUI() {
     const wait = queueSpotifyRequest.cooldownState();
@@ -49,7 +56,20 @@ function refreshPauseUI() {
           ? `Paused until ${new Date(wait.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}; ${activity}. ${Math.ceil((wait.retryAt - Date.now()) / 1000)} seconds remaining. This is a saved deadline, not a new Spotify rejection.`
           : '';
     $('#scan').disabled = wait.paused || scanning || executing || checkingAvailability;
-    $('#scan').textContent = wait.paused ? 'Paused' : 'Build preview';
+    $('#scan').textContent = wait.paused
+        ? 'Paused'
+        : resumeAvailable ? 'Resume preview' : 'Build preview';
+    $('#stopScan').hidden = !scanning;
+    $('#stopScan').disabled = stopRequested;
+    $('#disconnect').disabled = scanning || executing || checkingAvailability;
+    for (const selector of [
+        '#source',
+        '#destination',
+        'input[name=kind][value="track"]',
+        'input[name=kind][value="album"]',
+    ]) {
+        $(selector).disabled = scanning || executing;
+    }
     if (wait.paused) $('#execute').disabled = true;
     $('#checkAvailability').hidden = !wait.unknown;
     $('#checkAvailability').disabled =
@@ -91,22 +111,20 @@ function checkpointKey(id) {
     return `spotify_preview:${localStorage.getItem('spotify_client_id')}:${state.accountId}:${id}`;
 }
 
-const inspectPreviewPlaylist = createPlaylistCheckpoints({
-    load: (id) => {
-        try {
-            const key = checkpointKey(id);
-            return key ? JSON.parse(sessionStorage.getItem(key) || 'null') : null;
-        } catch {
-            return null;
-        }
-    },
-    save: (id, value) => {
-        try {
-            const key = checkpointKey(id);
-            if (key) sessionStorage.setItem(key, JSON.stringify(value));
-        } catch {
-            // Storage limits do not turn an incomplete read into a complete one.
-        }
+async function loadCheckpoint(id) {
+    const key = checkpointKey(id);
+    let value = await previewStore.load(key);
+    if (value === null && state.legacyAccountId && state.legacyAccountId !== state.accountId) {
+        const oldKey = `spotify_preview:${localStorage.getItem('spotify_client_id')}:${state.legacyAccountId}:${id}`;
+        value = await previewStore.load(oldKey);
+        if (value !== null) await previewStore.save(key, value);
+    }
+    return value;
+}
+
+const previewStore = createPreviewStore({
+    onStatus: (text) => {
+        $('#cacheStatus').textContent = text;
     },
 });
 
@@ -117,6 +135,51 @@ const authStatus = $('#authStatus');
 function message(text, kind = '') {
     status.textContent = text;
     status.className = `status ${kind}`;
+}
+
+function showProgress(event) {
+    if (!progress) return;
+    if (event?.type === 'page') progress.pages++;
+    if (['reused', 'resumed', 'changed'].includes(event?.type))
+        progress[event.type].add(event.id);
+    $('#scanProgress').hidden = false;
+    $('#scanProgress').textContent =
+        `Checked ${progress.checked} of ${progress.total} playlists · ${progress.total - progress.checked} remaining · ${progress.reused.size} reused · ${progress.resumed.size} resumed · ${progress.changed.size} changed · ${progress.pages} pages fetched · ${progress.unresolved} unresolved.`;
+}
+
+async function ensureAccount(restoreDraft = false) {
+    if (!state.accountId) {
+        const me = await api('/me');
+        const accountId = me?.account_id || me?.id;
+        if (typeof accountId !== 'string' || !accountId)
+            throw new Error(
+                'Spotify account identity is unavailable; preview cannot be scoped safely.',
+            );
+        state.accountId = accountId;
+        state.legacyAccountId = typeof me.id === 'string' ? me.id : null;
+        const name = me.display_name || accountId;
+        $('#accountLabel').textContent = 'Connected as';
+        $('#account').textContent = name;
+        $('#account').hidden = false;
+    }
+    if (restoreDraft) {
+        const draft = await loadCheckpoint('draft');
+        if (
+            draft?.version === 1 &&
+            ['track', 'album'].includes(draft.kind) &&
+            typeof draft.source === 'string' &&
+            typeof draft.destination === 'string' &&
+            !$('#source').value &&
+            !$('#destination').value
+        ) {
+            $('#source').value = draft.source;
+            $('#destination').value = draft.destination;
+            document.querySelector(`input[name=kind][value="${draft.kind}"]`).checked = true;
+            resumeAvailable = true;
+            refreshPauseUI();
+            message('Saved preview found. Resume to recheck playlist versions and continue; nothing has been changed.');
+        }
+    }
 }
 
 function randomString(n = 64) {
@@ -215,6 +278,8 @@ async function refresh() {
 }
 
 async function api(path, options = {}, recoveryProbe = false) {
+    if (scanning && stopRequested)
+        throw new Error('Preview stopped. Saved pages are kept; resume when ready.');
     const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
     const target = new URL(url);
     if (
@@ -233,6 +298,8 @@ async function api(path, options = {}, recoveryProbe = false) {
     const sendRequest = recoveryProbe ? queueSpotifyRequest.probeUnknown : queueSpotifyRequest;
     const response = await sendRequest(
         async () => {
+            if (scanning && stopRequested)
+                throw new Error('Preview stopped. Saved pages are kept; resume when ready.');
             if (
                 !state.token ||
                 Date.now() >= Number(sessionStorage.getItem('expires_at') || 0) - 30000
@@ -259,7 +326,7 @@ async function api(path, options = {}, recoveryProbe = false) {
             return result;
         },
         `${options.method || 'GET'} ${new URL(url).pathname.replace(
-            /\/(tracks|albums|playlists)\/[^/]+/g,
+            /\/(tracks|albums|playlists|users)\/[^/]+/g,
             '/$1/{id}',
         )}`,
     );
@@ -276,12 +343,21 @@ async function api(path, options = {}, recoveryProbe = false) {
             detail =
                 'The local read relay is unavailable. Stop the old server with Ctrl+C and run npm start again.';
         }
-        const error = new Error(detail || `Spotify request failed (${response.status}).`);
+        const operation = `${options.method || 'GET'} ${target.pathname.replace(/\/(tracks|albums|playlists|users)\/[^/]+/g, '/$1/{id}')}`;
+        const error = new Error(
+            `${operation}: ${detail || `Spotify request failed (${response.status}).`}`,
+        );
         error.status = response.status;
         throw error;
     }
     return response.status === 204 ? null : response.json();
 }
+function trackLabel(track, requestedId) {
+    const release = [track.album?.name, track.album?.release_date].filter(Boolean).join(' · ');
+    const returned = track.id && track.id !== requestedId ? ` · Spotify returned ${track.id}` : '';
+    return `${track.name} — ${track.artists.map((artist) => artist.name).join(', ')}${release ? ` · ${release}` : ''} · ${requestedId}${returned}`;
+}
+
 async function resolveInputs() {
     const chosen = document.querySelector('input[name=kind]:checked').value,
         source = parseSpotifyInput($('#source').value),
@@ -300,8 +376,8 @@ async function resolveInputs() {
                 'Spotify could not load both tracks. Check that they are available to this account.',
             );
         return {
-            sourceLabel: `${a.name} — ${a.artists.map((x) => x.name).join(', ')}`,
-            destinationLabel: `${b.name} — ${b.artists.map((x) => x.name).join(', ')}`,
+            sourceLabel: trackLabel(a, source.id),
+            destinationLabel: trackLabel(b, destination.id),
             replacements: [
                 {
                     sourceUri: trackUri(source.id),
@@ -345,6 +421,8 @@ async function scan() {
         return;
     }
     scanning = true;
+    stopRequested = false;
+    refreshPauseUI();
     previewReady = false;
     state.targets = [];
     state.libraryTarget = null;
@@ -352,7 +430,30 @@ async function scan() {
         $('#scan').disabled = true;
         $('#execute').disabled = true;
         $('#preview').hidden = true;
+        progress = null;
+        $('#scanProgress').hidden = true;
         queueSpotifyRequest.check();
+        await ensureAccount(true);
+        // Preserve the last usable draft when a newly entered link is malformed.
+        parseSpotifyInput($('#source').value);
+        parseSpotifyInput($('#destination').value);
+        await previewStore.save(checkpointKey('draft'), {
+            version: 1,
+            source: $('#source').value.trim(),
+            destination: $('#destination').value.trim(),
+            kind: document.querySelector('input[name=kind]:checked').value,
+        });
+        resumeAvailable = true;
+        // Retain memory fallback in this tab, but never share it across accounts/apps.
+        const scope = checkpointKey('');
+        if (previewScope !== scope) {
+            previewScope = scope;
+            previewInspector = createPlaylistCheckpoints({
+                load: loadCheckpoint,
+                save: (id, value) => previewStore.save(`${scope}${id}`, value),
+                onProgress: showProgress,
+            });
+        }
         message('Validating releases and Liked Songs…');
         const resolved = await resolveInputs();
         state.replacements = resolved.replacements;
@@ -366,30 +467,49 @@ async function scan() {
         const contents = new Map();
         state.libraryTarget = findLibraryTarget(resolved.replacements, membership);
         state.skipped = [];
+        progress = {
+            total: playlists.length,
+            checked: 0,
+            pages: 0,
+            unresolved: 0,
+            reused: new Set(),
+            resumed: new Set(),
+            changed: new Set(),
+        };
+        showProgress();
         for (let i = 0; i < playlists.length; i++) {
             message(`Scanning playlist ${i + 1} of ${playlists.length}: ${playlists[i].name}`);
             try {
                 contents.set(
                     playlists[i].id,
-                    await inspectPreviewPlaylist(playlists[i].id, api, playlists[i].snapshot_id),
+                    await previewInspector(playlists[i].id, api, () => {
+                        message(
+                            `Playlist changed; reading its new version once: ${playlists[i].name}`,
+                        );
+                    }),
                 );
             } catch (error) {
-                if (error.status !== 403) throw error;
+                progress.unresolved++;
+                if (error.status !== 403 && error.code !== 'PLAYLIST_CHANGED') throw error;
                 state.skipped.push({
                     name: playlists[i].name,
                     status: error.status || null,
                     reason: error.message,
-                    category: error.status === 403 ? 'not owner/collaborator' : 'read failed',
+                    category: error.code === 'PLAYLIST_CHANGED' ? 'changing' : 'access denied',
                 });
+            } finally {
+                progress.checked++;
+                showProgress();
             }
         }
+        if (stopRequested) throw new Error('Preview stopped. Saved pages are kept; resume when ready.');
         state.targets = findTargets(playlists, contents, state.replacements);
         previewReady = state.skipped.length === 0;
         render(resolved.replacements);
     } catch (error) {
         state.targets = [];
         state.libraryTarget = null;
-        message(`Preview incomplete. ${error.message}`, 'error');
+        message(`Preview incomplete. ${error.message} Saved pages will be revalidated on resume.`, 'error');
     } finally {
         scanning = false;
         refreshPauseUI();
@@ -426,6 +546,13 @@ async function inspectPlaylist(id) {
     return { rows, snapshotId: playlist.snapshot_id };
 }
 function render(replacements) {
+    const unresolved = $('#unresolvedList');
+    unresolved.replaceChildren();
+    for (const playlist of state.skipped) {
+        const row = document.createElement('li');
+        row.textContent = `${playlist.name} — ${playlist.reason}`;
+        unresolved.append(row);
+    }
     const mappings = $('#mappingList');
     mappings.replaceChildren();
     for (const r of replacements) {
@@ -452,7 +579,7 @@ function render(replacements) {
     $('#targetCount').textContent = state.targets.length;
     $('#skippedCount').textContent = state.skipped.length;
     $('#skippedDetail').textContent = state.skipped.length
-        ? ` (${forbidden} not owned/collaborative; ${failed} other read failures)`
+        ? ` (${forbidden} access denied; ${failed} changing or otherwise unresolved)`
         : '';
     $('#likedStatus').textContent = state.libraryTarget.affected
         ? `${state.libraryTarget.occurrences} source track${state.libraryTarget.occurrences === 1 ? ' is' : 's are'} in Liked Songs`
@@ -462,7 +589,7 @@ function render(replacements) {
     $('#execute').disabled = !affected || !previewReady;
     if (!previewReady) {
         message(
-            'Preview incomplete: some playlists could not be read. Migration is unavailable.',
+            'Preview incomplete: some playlists remain unresolved. Other playlists were scanned and retained. Rebuild preview to retry; migration is unavailable until coverage is complete.',
             'error',
         );
         return;
@@ -479,6 +606,7 @@ async function execute() {
     if (!state.targets.length && !state.libraryTarget?.affected) return;
     previewReady = false;
     executing = true;
+    refreshPauseUI();
     $('#execute').disabled = true;
     $('#scan').disabled = true;
     try {
@@ -547,6 +675,9 @@ async function execute() {
     }
 }
 async function init() {
+    $('#redirectUri').textContent = redirectUri;
+    $('#execute').disabled = true;
+    $('#preview').hidden = true;
     $('#accountLabel').textContent = 'Spotify session saved; account not checked';
     $('#account').hidden = true;
     $('#clientId').value = localStorage.getItem('spotify_client_id') || '';
@@ -571,13 +702,8 @@ async function init() {
     refreshPauseUI();
     if (state.token && !queueSpotifyRequest.cooldownState().paused) {
         try {
-            const me = await api('/me');
-            state.accountId = me.id || me.account_id || null;
-            const name = me.display_name || me.id;
-            $('#accountLabel').textContent = name ? 'Connected as' : 'Spotify session saved';
-            $('#account').textContent = name || '';
-            $('#account').hidden = !name;
-            message('Connected. Choose track or album mode.', 'success');
+            await ensureAccount(true);
+            if (!resumeAvailable) message('Connected. Choose track or album mode.', 'success');
         } catch (error) {
             message(error.message, 'error');
         }
@@ -597,13 +723,46 @@ $('#recordCooldown').addEventListener('click', () => {
     }
 });
 $('#checkAvailability').addEventListener('click', checkAvailability);
+function invalidatePreview() {
+    previewReady = false;
+    $('#execute').disabled = true;
+    $('#preview').hidden = true;
+}
+
+for (const selector of ['#source', '#destination'])
+    $(selector).addEventListener('input', invalidatePreview);
+for (const kind of ['track', 'album'])
+    $(`input[name=kind][value="${kind}"]`).addEventListener('change', invalidatePreview);
+
 globalThis.addEventListener?.('storage', refreshPauseUI);
 $('#connect').addEventListener('click', login);
 $('#scan').addEventListener('click', scan);
+$('#stopScan').addEventListener('click', () => {
+    stopRequested = true;
+    refreshPauseUI();
+    message('Stopping after the current read. Successfully saved pages will be kept.');
+});
 $('#execute').addEventListener('click', execute);
-$('#disconnect').addEventListener('click', () => {
+$('#disconnect').addEventListener('click', async () => {
+    if (scanning || executing || checkingAvailability) return;
+    let erased = true;
+    try {
+        await previewStore.clear(`spotify_preview:${localStorage.getItem('spotify_client_id')}:`);
+    } catch {
+        erased = false;
+    }
     sessionStorage.clear();
     localStorage.removeItem('refresh_token');
-    location.reload();
+    if (erased) location.reload();
+    else {
+        state.token = null;
+        state.accountId = null;
+        previewReady = false;
+        $('#execute').disabled = true;
+        $('#preview').hidden = true;
+        $('#setup').hidden = false;
+        $('#swapper').hidden = true;
+        message('Disconnected, but saved preview data could not be erased. Clear this site’s browser data to remove it.', 'error');
+    }
 });
 init();

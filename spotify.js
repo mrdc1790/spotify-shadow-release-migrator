@@ -202,28 +202,58 @@ export async function collectPages(firstUrl, request) {
     return items;
 }
 // Checkpoint only preview reads. Confirmed execution always performs uncached reads.
-export function createPlaylistCheckpoints({ load = () => null, save = () => {} } = {}) {
+export function createPlaylistCheckpoints({
+    load = () => null,
+    save = () => {},
+    onProgress = () => {},
+} = {}) {
     const memory = new Map();
-    return async function inspect(id, request, listedSnapshot = null) {
+    async function changed(id) {
+        memory.delete(id);
+        await save(id, null);
+        onProgress({ type: 'changed', id });
+        const error = new Error('Playlist changed during preview; its old pages were discarded.');
+        error.code = 'PLAYLIST_CHANGED';
+        return error;
+    }
+
+    async function inspect(id, request) {
+        function isPlaylistPage(url) {
+            try {
+                const parsed = new URL(url);
+                return (
+                    parsed.origin === 'https://api.spotify.com' &&
+                    parsed.pathname === `/v1/playlists/${id}/items` &&
+                    !parsed.username &&
+                    !parsed.password &&
+                    !parsed.hash
+                );
+            } catch {
+                return false;
+            }
+        }
         const metadataUrl = `${API_BASE}/playlists/${id}?fields=snapshot_id`;
-        // Discovery just read this version. A final snapshot check still detects changes
-        // during pagination. Resumes without a listed version fetch fresh metadata.
-        const current = listedSnapshot
-            ? { snapshot_id: listedSnapshot }
-            : await request(metadataUrl);
+        // A large scan may reach this playlist long after discovery. Use a fresh
+        // version immediately before reading or resuming, then verify it afterward.
+        const current = await request(metadataUrl);
         if (!current?.snapshot_id) throw new Error('Playlist snapshot is unavailable.');
-        let cached = memory.get(id) || load(id);
+        let cached = memory.get(id) || (await load(id));
+        if (cached && cached.snapshot !== current.snapshot_id)
+            onProgress({ type: 'changed', id });
         if (
             !cached ||
             cached.snapshot !== current.snapshot_id ||
             !Array.isArray(cached.rows) ||
             !Array.isArray(cached.seen) ||
-            !cached.rows.every((row) => row?.item &&
-                (row.item.uri === null || typeof row.item.uri === 'string')) ||
-            !cached.seen.every((url) => typeof url === 'string' && url.length > 0) ||
+            typeof cached.complete !== 'boolean' ||
+            !cached.rows.every(
+                (row) => row?.item && (row.item.uri === null || typeof row.item.uri === 'string'),
+            ) ||
+            !cached.seen.every(isPlaylistPage) ||
+            cached.seen.length === 0 ||
             new Set(cached.seen).size !== cached.seen.length ||
             !(Number.isInteger(cached.total) && cached.total >= cached.rows.length) ||
-            !(cached.next === null || (typeof cached.next === 'string' && cached.next.length > 0)) ||
+            !(cached.next === null || isPlaylistPage(cached.next)) ||
             (cached.next === null && cached.rows.length !== cached.total) ||
             (cached.complete && (cached.next !== null || cached.rows.length !== cached.total))
         ) {
@@ -237,27 +267,31 @@ export function createPlaylistCheckpoints({ load = () => null, save = () => {} }
             };
         }
         if (cached.complete) {
-            if (listedSnapshot) {
-                const latest = await request(metadataUrl);
-                if (latest?.snapshot_id !== cached.snapshot) {
-                    memory.delete(id);
-                    save(id, null);
-                    return inspect(id, request, latest?.snapshot_id || null);
-                }
-            }
+            onProgress({ type: 'reused', id, rows: cached.rows.length });
             return cached.rows;
         }
+        if (cached.rows.length || cached.seen.length)
+            onProgress({ type: 'resumed', id, rows: cached.rows.length });
         memory.set(id, cached);
         while (cached.next) {
             if (cached.seen.includes(cached.next))
                 throw new Error('Repeated playlist page; preview incomplete.');
             const page = await request(cached.next);
             if (
+                cached.total !== null &&
+                Number.isInteger(page?.total) &&
+                cached.total !== page.total
+            ) {
+                const latest = await request(metadataUrl);
+                if (latest?.snapshot_id && latest.snapshot_id !== cached.snapshot)
+                    throw await changed(id);
+            }
+            if (
                 !page ||
                 !Array.isArray(page.items) ||
                 !Number.isInteger(page.total) ||
                 page.total < 0 ||
-                !(page.next === null || (typeof page.next === 'string' && page.next.length > 0)) ||
+                !(page.next === null || isPlaylistPage(page.next)) ||
                 (cached.total !== null && cached.total !== page.total) ||
                 cached.rows.length + page.items.length > page.total ||
                 (page.next === null && cached.rows.length + page.items.length !== page.total) ||
@@ -269,17 +303,34 @@ export function createPlaylistCheckpoints({ load = () => null, save = () => {} }
             cached.total = page.total;
             cached.seen.push(cached.next);
             cached.next = page.next;
-            save(id, cached);
+            await save(id, cached);
+            onProgress({ type: 'page', id, rows: cached.rows.length, total: cached.total });
         }
         const after = await request(metadataUrl);
+        if (!after?.snapshot_id) throw new Error('Playlist snapshot is unavailable.');
         if (after?.snapshot_id !== cached.snapshot) {
-            memory.delete(id);
-            save(id, null);
-            throw new Error('Playlist changed during preview; rebuild to read its new version.');
+            throw await changed(id);
         }
         cached.complete = true;
-        save(id, cached);
+        await save(id, cached);
+        onProgress({ type: 'complete', id, rows: cached.rows.length });
         return cached.rows;
+    }
+
+    return async function inspectWithRetry(id, request, onChange = () => {}) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                return await inspect(id, request);
+            } catch (error) {
+                if (error.code !== 'PLAYLIST_CHANGED') throw error;
+                if (attempt === 1) {
+                    error.message =
+                        'Playlist changed during both reads; coverage remains unresolved. Rebuild preview to retry.';
+                    throw error;
+                }
+                onChange();
+            }
+        }
     };
 }
 
