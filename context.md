@@ -6,6 +6,14 @@ documentation and a manual trial precede a versioned file bridge. The catalog
 owns discovery/history/evidence; this browser is the preferred future execution
 interface. No bridge is implemented, and Python execution restrictions remain.
 
+The shared long-term goal, clarified October 27, 2026, is DJing with a deeply
+organized, tagged library, probably through rekordbox. The catalog's
+[DJ library workflow](https://github.com/mrdc1790/personal-music-library/blob/main/docs/DJ_LIBRARY_WORKFLOW.md)
+owns tagging, exact audio-version identity, preparation preservation, musical
+filters, and a small local-audio exchange pilot. This browser remains the
+reviewed Spotify migration surface. Obsidian is an optional Markdown workspace
+and private research tool; it introduces no runtime or sync dependency.
+
 ### Current implementation alignment — October 27, 2026
 
 The [current delivery plan](UPDATED_PLAN.md) and [README](README.md) distinguish

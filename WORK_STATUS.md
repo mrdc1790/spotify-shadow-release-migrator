@@ -1,5 +1,23 @@
 # Work status — October 27, 2026
 
+## DJ goal alignment and publication
+
+README, UPDATED_PLAN, and context now link to the catalog's
+[DJ library workflow](https://github.com/mrdc1790/personal-music-library/blob/main/docs/DJ_LIBRARY_WORKFLOW.md):
+the shared goal is a deeply organized, tagged library for DJing, probably through
+rekordbox. The catalog owns the planned tagging, musical recipes, exact audio
+versions, and preparation-preservation pilot. Spotify migrations do not transfer
+audio or DJ preparation. A local-audio pilot can proceed independently of the
+catalog/browser bridge.
+
+Obsidian remains optional for Markdown editing and private research; local
+`.obsidian/` settings are ignored. This follow-up changes documentation and
+ignore rules only, with no runtime, OAuth, account, or rekordbox changes. The
+earlier preservation record below remains historical context.
+
+Publication checks: 65 migrator tests and 11 sibling catalog tests passed;
+added local/cross-repository links and anchors and Git whitespace checks passed.
+
 ## Preserved work
 
 The local changes were uncommitted while main was two commits behind origin/main.

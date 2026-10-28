@@ -40,6 +40,16 @@ preview cache. Keep their capture/enrichment jobs and credentials independent.
 
 ## Shared sequence and next delivery details
 
+The user clarified on October 27, 2026 that an ultimate goal across these tools
+is DJing with a deeply organized, tagged library, probably through rekordbox.
+The catalog's [DJ library workflow](https://github.com/mrdc1790/personal-music-library/blob/main/docs/DJ_LIBRARY_WORKFLOW.md)
+owns tagging, exact audio-version identity, preparation preservation, musical
+recipes, and a small local-audio/rekordbox pilot. That pilot need not wait for
+this bridge or complete Spotify coverage. Keep Spotify migration separate: a
+reviewed replacement does not approve changing a local file or copying cues
+between edits. Obsidian is an optional view/editor for Markdown and private
+research notes, with no required runtime, sync, or credentials integration.
+
 The [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md)
 owns phase ordering: manual trial and measurement, versioned proposal contract,
 read-only export/import, outcome history, then imported-evidence optimization.
