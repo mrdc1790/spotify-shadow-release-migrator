@@ -11,6 +11,41 @@
 
 ## Confirmed follow-up and current implementation
 
+Documentation and local source were reconciled on October 27. The
+[current plan](UPDATED_PLAN.md) records delivered browser recovery, pending catalog
+work/export-import, and remaining authenticated acceptance. This docs-only review
+reran 65 migrator tests and 11 catalog tests, made no account requests, and did not
+re-probe port availability or today's quota. The dated observations below retain
+their original scope; the old 20-minute failure still has no established final
+error/cause. Native browser recovery evidence is from the synthetic October 22
+test, not a new live-account result.
+
+October 22 recovery update: preview checkpoints now commit to IndexedDB before
+the next page is requested. Resume survives tab closure when browser storage is
+available; storage fallback, progress counts, and Stop scan are visible. Fresh
+playlist-version checks, fail-closed coverage, cooldown handling, and uncached
+execution remain required. Synthetic tests cover the supplied Tape B track IDs
+and an interrupted 581-playlist scan, but no authenticated account scan was
+available for this update. Neither the original 20-minute failure nor today's
+quota state is established by those fixtures. See README.md for recovery steps.
+
+The same workstation also refused the default localhost port 5173 with `EACCES`.
+Windows' excluded TCP ranges included 5141–5240. The real app started successfully
+on port 18080; its UI now displays the actual redirect URI and the server explains
+port-permission failures. This is a startup issue, separate from the earlier
+20-minute preview report. No Windows port reservations or Spotify app settings
+were changed by the fix.
+
+An October 2 live test established two separate preview blockers. The local
+server had been started inside a restricted agent sandbox and could not connect
+to Spotify (`EACCES`). Restarting it with network access restored reads. Spotify
+then returned a current-user playlist pagination link using
+`/v1/users/{id}/playlists`, which the relay rejected. The relay now maps that
+pagination alias to `/v1/me/playlists` while retaining the page query. Network
+and validation errors now identify the failure without raw credentials, URLs,
+or account details. These findings explain that test's failed preview; they do
+not identify the cause of the earlier `QUOTA_EXCEEDED` response.
+
 A later captured playlist-list response reported `QUOTA_EXCEEDED` and a
 multi-hour `Retry-After`, but omitted the CORS exposure header. DevTools could
 show the cooldown while browser JavaScript could not. The earlier fallback

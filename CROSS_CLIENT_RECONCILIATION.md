@@ -17,6 +17,27 @@ The broader evidence model and dated count/recovery observations live in the
 repository. This app retains the same rule locally because it is the explicit
 account-write surface: UI disagreement alone can never authorize a migration.
 
+## October 6, 2026: old-album navigation
+
+The user reports that **View album** on an old/shadow track now returns to the
+old/shadow album. Previously, it opened a newer release whose tracks appeared
+unliked and absent from playlists, leaving the old album difficult to reach from
+its saved track. They report no Android app update. Retain both as dated client
+observations; the navigation symptom appears improved, with cause and scope unknown.
+
+Restored navigation is useful access to the old release, not evidence of merged
+IDs, transferred likes/placements, saved-album membership, universal recovery,
+or Web API readability. No specific old/new pair was reverified for this update.
+When useful, capture the actual old/new album and track links, navigation route,
+client/version, time, and each instance's membership read-only. Unknown IDs or
+membership stay unknown. Migration is optional and still requires reviewed
+source/destination identities and explicit confirmation.
+
+Both repositories were inspected: the catalog retains this observation and its
+resolver requirements; this app already reads explicitly supplied album IDs and
+does not rely on Spotify's View album route. No runtime change is needed for this
+reported navigation improvement, and no account scan or migration was performed.
+
 ## Evidence model for the broader library project
 
 Retain the stored playlist occurrence URI and position, requested/effective URI
@@ -104,6 +125,17 @@ The [Spotify Dedup site](https://spotify-dedup.com/) describes ID and metadata-s
 The [specific relinker source](https://github.com/AfterForever667/spotify_songs_relink/blob/main/spotify_songs_relink.py) processes likes or one owned playlist, skips missing IDs, collapses repeated IDs per page, and handles relink/unavailable candidates. Playable single/album pairs without a relink need not be found. Its append-then-remove-all playlist behavior and absence of add readback do not meet this project's migration guarantees. Neither tool establishes why client totals differ. These are source-review findings, not live compatibility results; deployed Dedup behavior can differ from the inspected branch.
 
 ## Discovery and resolver boundary
+
+**October 27 implementation alignment:** browser preview persistence is now
+implemented with IndexedDB and visible session/memory fallback. It retains compact
+URI/progress evidence, not a full historical catalog, device inventory, or durable
+mutation journal. It does not resolve phone/desktop membership disagreement,
+recover hidden IDs, prove recording equivalence, or populate the Python catalog.
+The [current plan](UPDATED_PLAN.md) separates delivered recovery from the planned
+versioned discovery export/import. A future import must preserve coverage and
+provenance, show historical dates, and never enable execution without fresh
+discovery and existing migration checks. The catalog's database-first queries and
+resolver remain separate from this selected-ID browser workflow.
 
 Reviewed on 2026-09-30 against the “Clarify Spotify Duplicates” chat and the Google Doc's current catalog identity/reconciliation specification. Most of that discussion is already preserved above. This section retains the remaining architectural distinction so the chat is not needed as project documentation.
 

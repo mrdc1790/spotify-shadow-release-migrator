@@ -2,11 +2,29 @@
 
 Safely replace a Spotify track—or an entire shadow re-release of an album—across every playlist you own or collaborate on.
 
+## Implementation and plan status — October 27, 2026
+
+The local implementation includes persistent preview recovery, resume/stop,
+progress and fallback reporting, and fresh validation before confirmed writes.
+The personal-library database was not extended or populated by that recovery
+work. A catalog exporter/browser importer and browser mutation journal remain
+planned; recovery can be used without them. See the
+[current delivery plan](UPDATED_PLAN.md) for ownership, dependencies, integration
+acceptance, and the remaining authenticated test for the supplied track pair.
+
+October 27 checks passed 65 migrator tests and 11 catalog tests. The October 22
+browser close/reopen smoke test was synthetic. These are local working-tree
+results, not a verified deployed release or successful account migration. No
+runtime code, personal database, OAuth setting, or Spotify membership was changed
+by this documentation refresh.
+
 ## What it does
 
 - **Track mode:** replace one specific track with another.
 - **Album mode:** pair two album releases by disc number + track number, then replace every source-album track found in your playlists.
 - Shows the exact track mapping, Liked Songs state, and affected playlists before changing anything.
+- Track labels include the requested IDs and available album/date metadata, so
+  two identically titled releases can still be distinguished during review.
 - Adds every needed destination track first. If **any add fails, no source track is removed anywhere**.
 - Preserves duplicate source occurrences: an existing destination occurrence does
   not cancel the replacement occurrence that the source contributes.
@@ -62,6 +80,21 @@ npm start
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), paste the Client ID, and authorize Spotify.
 
+If Windows refuses the port with `EACCES`, it may be in an excluded TCP range
+(inspect with `netsh interface ipv4 show excludedportrange protocol=tcp`). Use an
+available port without changing Windows reservations, for example:
+
+```powershell
+$env:PORT = '18080'
+npm start
+```
+
+Register `http://127.0.0.1:18080/` as an additional redirect URI in the same Spotify
+developer app before connecting at that address. The setup screen displays the
+actual redirect URI. Changing host, port, or browser profile uses different local
+browser storage; it does not move an existing preview cache or cooldown record.
+Do not change origin to try to bypass Spotify cooldowns.
+
 ## Using track mode
 
 Choose **Tracks**, then paste either full Spotify links, Spotify URIs, or bare 22-character IDs.
@@ -90,6 +123,12 @@ The albums must have matching disc/track positions and the same track count. The
 ```
 
 If a deluxe edition has extra tracks or the sequencing differs, the tool refuses to guess and makes no changes. Use track mode for the exceptional tracks.
+
+**Old-album navigation update (October 6, 2026):** the user reports that **View
+album** on an old/shadow track now opens the old album, without an Android app
+update. That restores access in the observed cases; it does not prove old/new
+IDs or memberships were merged. Keeping the old release is valid; migrate only
+when you want a different instance. See the [dated observation](CROSS_CLIENT_RECONCILIATION.md#october-6-2026-old-album-navigation).
 
 ## Important limitations
 
@@ -130,6 +169,15 @@ and never stores credentials or account responses on disk. PKCE/token refresh
 stay in the browser; confirmed writes still go directly to Spotify. Restart
 `npm start` after updating so the running server includes the relay.
 
+The server must have network access to Spotify. A server started inside a
+restricted agent sandbox may receive `EACCES` before contacting Spotify; this is
+a local connection failure, not a quota response. The relay reports that failure
+without exposing credentials or raw network errors. Current-user playlist
+pagination can return `/users/{id}/playlists` next links; the relay maps that alias
+to `/me/playlists`, retaining the page query and keeping reads scoped to the
+authenticated user. The sibling catalog already accepts Spotify pagination links;
+no companion change is required.
+
 The relay serializes reads across tabs and preserves a detected cooldown in
 memory. The browser persists cooldowns in local storage per Client ID. Long
 cooldowns stop promptly without replaying requests. If no usable retry header
@@ -148,15 +196,36 @@ Transient HTTP 500/502/503/504 reads have at most two retries, after two and fou
 seconds. Network failures, redirects, authentication errors, and writes are not
 replayed by the relay. Spotify's quota cannot be reset by reloading or restarting.
 
-Preview playlist pages are checkpointed in this tab's session storage, scoped to
-Client ID and account. Each resume checks a fresh snapshot; a changed version is
-read again. Completed playlists need only their snapshot checked, and partial
-playlists continue at the next page. Totals, repeated pages, and snapshots are
-validated before declaring completion. Checkpoints preserve occurrence counts,
-contain only URIs/progress, and are cleared on disconnect/tab close. Storage
-capacity failures fall back to in-memory progress. Playlist discovery and selected
-Liked Songs membership are always re-read; there is no safe version token for
-reusing their old state. Confirmed migration never uses checkpointed reads.
+Preview pages now commit to this browser's **IndexedDB**, scoped to Client ID,
+account, and playlist. The cache contains ordered item URIs and page/version
+progress; a separate local draft remembers the selected links and mode. It stores
+no credentials. Closing and reopening the tab can resume saved work at the same
+browser profile and exact origin (host and port). Browser site-data deletion,
+private browsing, or browser eviction can still remove it; it is not a backup.
+
+**Resume preview** rechecks the selected releases, freshly discovers playlists and
+Liked Songs membership, then checks a fresh snapshot for every playlist, including
+previously negative results. Unchanged completed playlists need one version read;
+partial playlists continue at their next saved page. Changed playlists are read
+again. Totals, repeated pages, and snapshots are validated before completion.
+Old same-tab checkpoints are promoted to IndexedDB when loaded. The progress row
+shows checked, remaining, reused, resumed, changed, fetched-page, and unresolved counts.
+
+**Stop scan** stops before another read is dispatched, after the current read and
+any resulting checkpoint save. A timeout or quota pause also retains successful
+pages. Storage failures visibly fall back to session storage, then memory; those
+fallbacks have weaker recovery guarantees. Disconnect removes preview data for
+this Client ID and clears this tab's tokens; an erase failure is reported.
+
+Account identity must be checked before checkpoint access, including when a saved
+cooldown prevented the startup profile read. Missing identity blocks preview.
+The immutable `account_id` is preferred, with an `id` fallback for older responses;
+checkpoints under the same verified profile's legacy ID are promoted on load.
+This follows Spotify's [current profile identity guidance](https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile).
+Partial, unreadable, or persistently changing playlists still block confirmation.
+Confirmed migration always uses fresh reads and never trusts cached preview
+contents for its final safety checks. A completed personal-library database is
+**not required** for this recovery feature.
 
 ### Why the library scanner appeared more resilient
 
@@ -169,8 +238,8 @@ restore those failure modes.
 The sibling catalog's Python client can read all HTTP response headers, records
 cooldowns, checkpoints pages in SQLite, and revalidates snapshots on resume.
 This app now adopts those principles without sharing credentials, files, or
-runtime code. Its checkpoints are browser-session data, not durable catalog
-backups. A larger total number of API reads does not establish a larger quota:
+runtime code. The browser's persistent preview cache is recovery data, not a
+historical catalog or durable catalog backup. A larger total number of API reads does not establish a larger quota:
 client identity, timing, endpoint limits, and retained progress matter. The
 original quota trigger remains unproven; no live quota probe was used to test
 these changes. The sibling code/tests were inspected; no companion edit is needed.
@@ -198,6 +267,19 @@ The projects share these rules: preserve duplicate occurrences; classify unreada
 npm test
 ```
 
+`npm test` includes the supplied Tape B IDs and a synthetic 581-playlist
+interruption/reload case, preserving duplicate occurrences and discovering a
+changed formerly negative playlist. These fixtures do not establish live account
+membership, metadata equivalence, quota availability, or a successful migration.
+
+For a real-browser IndexedDB recovery smoke test, run `npm run test:browser` and
+open its printed localhost URL. It is visibly labeled synthetic, blocks external
+requests and writes, and uses no Spotify credentials. Build preview to trigger an
+intentional interrupted read, close and reopen the same URL, then Resume preview.
+Expect one reused playlist, one resumed playlist, one fetched page, and enabled
+confirmation after complete coverage. Do not use this fixture as a live migration
+tool. Use `npm start` on the configured OAuth origin for the real application.
+
 Authentication uses Authorization Code with PKCE and no Client Secret. Tokens are retained by the browser; each read transiently passes its access token through the local relay to Spotify. The relay never logs or saves tokens.
 
 ### Saved waits and request volume
@@ -217,10 +299,15 @@ playlist reads are not safe recovery strategies. The added Liked Songs and snaps
 reads happen after playlist discovery, so they cannot explain an initial rejection
 of that list request. The original quota trigger has not been established.
 
-Discovery snapshots now replace the extra initial metadata read where available.
-New playlist scans still verify the snapshot after pagination; reused completed
-pages still require a fresh snapshot check. Confirmed migration never uses these
-preview checkpoints for its final safety checks.
+The scanner checks a fresh version immediately before each playlist read, because
+a version listed during discovery may be stale by the time a long scan reaches it.
+New reads also verify the version after pagination; unchanged completed pages need
+only one fresh version check. If a version changes during reading, old pages are
+discarded and that playlist is reread once. If it changes again, it is listed as
+unresolved and the scanner continues with other playlists. Rebuilding preview
+rechecks the saved versions and retries unresolved playlists. Incomplete coverage
+still blocks migration. There is no background polling or automatic migration.
+Confirmed migration never uses preview checkpoints for its final safety checks.
 
 ### Development quota shared with other projects
 

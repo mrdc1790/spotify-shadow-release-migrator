@@ -6,6 +6,28 @@ documentation and a manual trial precede a versioned file bridge. The catalog
 owns discovery/history/evidence; this browser is the preferred future execution
 interface. No bridge is implemented, and Python execution restrictions remain.
 
+### Current implementation alignment — October 27, 2026
+
+The [current delivery plan](UPDATED_PLAN.md) and [README](README.md) distinguish
+implemented behavior from the broader design below. The October 22 runtime work
+added persistent IndexedDB preview checkpoints, resume/stop, visible progress and
+storage fallback, and account-scoped recovery. It did not implement a SQLite
+catalog bridge, recording resolver, or browser mutation journal. The personal
+library's Python code/schema were unchanged and no new personal database was
+populated. The October 27 work aligns documentation only.
+
+Offline checks passed 65 migrator tests and 11 catalog tests on October 27. The
+earlier browser interruption/close/reopen test used synthetic data. The two
+supplied track IDs are retained in [the plan](UPDATED_PLAN.md#goal-and-supplied-track-pair);
+their live direction, account membership, and end-to-end preview/migration remain
+unverified by those fixtures. This update made no Spotify account changes.
+
+The catalog remains the long-lived local query/evidence engine. Validate useful
+capture/import coverage and measured exact-instance queries, then implement an
+explicit versioned discovery export/import. Browser recovery works independently
+while that catalog work proceeds. Local code and these plans may differ from the
+published branch; this is not a release announcement.
+
 I am a heavy Spotify power user with a very large library, thousands of local songs, hundreds of playlists, and roughly 45,000+ Liked Songs. I am building toward a larger personal Spotify/music-library database and potentially a Spotify wrapper/media-hub application. This particular subproject concerns one of Spotify's most frustrating data-model quirks: **silent re-releases / shadow releases / alternate Spotify track IDs for what is effectively the same recording.**
 
 This problem should eventually integrate with my broader local music database rather than become an isolated throwaway script.
@@ -28,7 +50,7 @@ while
 
 This creates extremely confusing UI behavior.
 
-For example, I can:
+Historically, I could (see the October 6, 2026 update below):
 
 1. Go to an artist.
 2. View my Liked Songs by that artist.
@@ -37,7 +59,26 @@ For example, I can:
 5. Spotify takes me to what appears to be the same album/song.
 6. On that album page, the song suddenly appears **unliked and in none of my playlists**.
 
-The explanation is often that Spotify has taken me to a different Spotify track object/ID representing effectively the same recording.
+A candidate explanation is that Spotify opened a different release/track object whose library relationships differ. Navigation alone does not establish the IDs or recording equivalence.
+
+### October 6, 2026: old-album navigation appears restored
+
+The user reports that **View album** on an old/shadow track now opens the
+old/shadow album, rather than the newer release whose tracks appeared unliked
+and absent from playlists. They report no Android app update. This appears to
+resolve the reported navigation symptom and makes the old album reachable again;
+the previous behavior remains historical evidence.
+
+The cause, rollout scope, and persistence are unknown. This report does not
+establish that old/new IDs were merged, memberships transferred, every affected
+album recovered, or the old release became readable through the Web API. It also
+does not establish the album's saved-library status, which is separate from
+track likes and playlist placements. No specific prior example was reverified.
+
+Migration remains optional when the user prefers another instance. Capture the
+old and new album/track links and per-instance membership read-only before
+deciding whether a replacement is useful. See the dated observation and current
+scope in [cross-client reconciliation](CROSS_CLIENT_RECONCILIATION.md#october-6-2026-old-album-navigation).
 
 Therefore:
 
@@ -67,7 +108,7 @@ Current album:
 
 `2i2SHHNBXjCUMGsIeXOUyu`
 
-When navigating Spotify through my old saved copy, Spotify can lead me into the newer release context even though my library relationships belong to the old track ID.
+Historically, navigating Spotify through my old saved copy could lead into the newer release context even though my library relationships belonged to the old track ID. The October 6 report above does not specifically reverify this example.
 
 This is exactly the kind of pair I want the system to detect and migrate.
 
@@ -673,7 +714,13 @@ Start by producing a safe, inspectable solution to:
 
 Once that works reliably, expand detection so the program can discover candidate old/new pairs itself.
 
-After that, incorporate unavailable-track recovery, shadow-release auditing, canonical recording identities, historical snapshots, and the broader library database.
+The separate catalog already has durable capture, historical snapshot import,
+and offline queries; its useful real coverage and scale validation continue in
+parallel with browser preview validation. Next connect them through the planned
+versioned discovery handoff, without requiring the whole rich database or
+canonical recording resolver before a selected-ID preview. Unavailable-track
+recovery, reviewed recording relationships, and enrichment remain separate
+catalog extensions. See [the delivery sequence](UPDATED_PLAN.md#next-delivery-sequence).
 
 Treat **read-only indexing and trustworthy data modeling as the foundation**. The migration feature should be built on top of that foundation rather than writing a one-off Spotify mutation script.
 
