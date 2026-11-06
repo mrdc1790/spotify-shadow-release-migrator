@@ -1,162 +1,72 @@
-# Spotify Playlist Migrator — contributor guidance
+# Spotify Playlist Migrator contributor guidance
 
-## Project purpose and safety boundary
+## Migration safety
 
-This browser-based tool previews and, only after explicit user confirmation,
-migrates Spotify tracks across playlists and Liked Songs. Correctness and safe
-failure take priority over convenience.
+This browser app previews Spotify replacements across playlists and Liked Songs.
+Only explicit confirmation permits account writes.
 
-- Keep preview paths read-only. The confirmation action is the account-write
-  boundary; do not move mutations into preview, validation, or rendering code.
-- Preserve the add-before-remove order. If any required add or verification
-  fails, do not remove source tracks.
-- Preserve duplicate source occurrences: an existing destination occurrence
-  must not cancel the occurrence contributed by a source track.
-- Treat unreadable playlists, partial data, rate limits, and unverifiable state
-  as failures or unknowns—not as empty collections or permission to proceed.
-- Do not log, commit, or expose access tokens, client-specific data, or Spotify
-  account details. Do not add a client secret to this frontend application.
+- Keep preview, validation, and rendering read-only. Add and verify destination
+  tracks before removing source tracks. A failed required add or verification
+  blocks removal.
+- Preserve every source occurrence. Existing destination occurrences do not
+  offset additions owed by source occurrences.
+- Treat unreadable playlists, partial results, rate limits, and unverifiable
+  state as failures or unknown coverage.
+- Keep browser-side PKCE and token refresh. Keep client secrets out of the app
+  and tokens and account data out of logs, commits, and tool output.
+- The approved localhost relay may forward allowlisted GETs for cooldown
+  headers. Reject writes, foreign origins and hosts, and redirects. Never log
+  or persist credentials. Confirmed writes stay in the browser.
 
-## Navigation and impact analysis
+## Changes and tests
 
-Use Dekko for unfamiliar-codebase navigation, dependency tracing, symbol
-discovery, caller/callee analysis, change-impact analysis, and identifying
-relevant tests.
+- Trace preview and confirmed execution before changing migrations. Check Liked
+  Songs, duplicates, retries, and post-write verification. Describe actual
+  guarantees in the UI, including the limits of rollback.
+- Change redirect settings, OAuth scopes, or account-write rules only when
+  explicitly requested, with corresponding tests and docs.
+- Add focused `spotify.test.js` coverage for behavior changes, especially
+  failure and ordering. Run `npm test` for JavaScript behavior changes and a
+  local read-only preview smoke test for UI changes when practical. Preserve
+  safety assertions unless the task explicitly changes an invariant.
+- Use four-space indentation and follow the existing Prettier configuration.
 
-- This repository contains a `.dekko` map. Prefer focused Dekko queries such as
-  summary, search, outline, context, diff, affected, and workset before broad
-  repository reads.
-- Do not use Dekko for a trivial change when the relevant implementation is
-  already known.
-- Treat the map as navigation help, not implementation truth: read the actual
-  source before modifying code.
-- Regenerate a stale map when the installed Dekko workflow supports it. If
-  Dekko is unavailable, use targeted `rg` searches plus direct source/test
-  inspection.
-- For low- or zero-caller results that matter to correctness, use Dekko's
-  sanity check when available and verify against the source.
+See [work status](WORK_STATUS.md) for handoffs. The Personal Music Library is
+the sibling catalog.
 
-### Dekko in a workspace with multiple repositories
+## Navigation and verification
 
-- Pass an explicit absolute `root` on every Dekko MCP call. For this repo use
-  `C:\Users\polla\Documents\ChatGPT\spotify song playlist migrator`; for the sibling use
-  `C:\Users\polla\Documents\ChatGPT\personal-music-library`.
-  Resolve the checkout's actual absolute path if the workspace moves.
-- Roots are independent indexes. Query each affected repo separately; the shared
-  parent directory does not combine their maps. Never assume a previous call
-  changes the default root: an omitted `root` uses the server's configured cwd.
-- Start with `map_status(root=...)`; use `refresh_map(root=...)` if stale or
-  missing. Reuse a fresh map until relevant source changes; avoid repeated rebuilds.
-- For unfamiliar work, use a compact `summary` once, then focused `search_code`
-  or `outline` queries. Once a symbol is known, prefer file-qualified symbols
-  and a budgeted `get_context_pack` or `workset` over broad reads and repeated
-  searches. Read the actual source and relevant tests before editing.
-- Before relying on caller/callee impact, use `check_ambiguous` and spot-check
-  affected ambiguous calls in source. Include tests with `get_callers` when
-  needed. A zero result is a navigation lead, not proof of no impact; verify
-  with targeted `rg`. Cross-repo impact requires separate queries in both roots.
-- Prefer the working Dekko MCP tools here. The standalone CLI failed during the
-  2026-09-30 workspace test with `uv trampoline failed to canonicalize script
-  path`, while MCP refresh/search/impact calls worked. If MCP is unavailable,
-  use targeted `rg` and source/test inspection rather than repeatedly retrying
-  the broken CLI. Reassess the CLI if its installation changes.
+Use Dekko MCP for unfamiliar code and impact analysis. Resolve the current
+checkout's absolute path and pass it as `root` on every call. Check each
+repository's map separately with `map_status`. Refresh stale or missing maps
+when supported and reuse fresh maps until relevant code changes.
 
-## Source formatting
+Start with a compact summary and focused searches. Use file-qualified symbols
+and bounded context once the target is known. Verify ambiguous calls and
+consequential zero-caller results in source, including tests where relevant.
+For familiar edits or unavailable indexing, use targeted `rg` and direct
+source and test inspection.
 
-Keep source files human-readable.
+Inspect Git status before editing, preserve unrelated changes, and keep diffs
+focused. Keep source readable and follow existing formatting conventions.
 
-- Never minify HTML, CSS, or JavaScript source files.
-- Use 4 spaces for indentation; do not use literal tab characters.
-- Use normal blank lines between top-level functions and logical sections.
-- Prefer separate `const` or `let` declarations when variables represent
-  different concepts, and do not chain unrelated declarations with commas.
-- Prefer readability over minimizing line count. Keep one statement per line
-  where practical and do not compress functions onto single lines.
-- Keep formatting compatible with the existing Prettier configuration and
-  preserve established conventions when editing existing files.
+## Cross-repository changes
 
-## Implementation and verification
+Locate the sibling checkout when a task touches shared Spotify rules for
+writes, saved tracks, duplicates, coverage, reconciliation, OAuth, or migration
+safety. Inspect its source, tests, and docs before deciding on a companion edit.
+Keep each repository independently runnable and testable. Shared runtime paths
+or imports require an explicit task requirement. Edit both only when behavior,
+interfaces, or documented guarantees would otherwise diverge. Report what you
+checked and run relevant tests in each changed repository.
 
-- Keep authentication and token refresh on Authorization Code with PKCE in the
-  browser, with no client secret. The user-approved localhost relay may forward
-  allowlisted GET reads to expose Spotify cooldown headers; it must reject writes,
-  foreign origins/hosts, and redirects, and never log or persist credentials.
-  Confirmed mutations remain browser initiated and retain the existing safety gates.
-- Before changing migration behavior, trace both the preview and confirmed
-  execution paths, including Liked Songs, duplicate occurrences, retry/error
-  handling, and post-write verification.
-- Make UI copy accurately describe safety guarantees and limitations; never
-  imply transactional rollback across Spotify playlists.
-- Add or update focused tests in `spotify.test.js` for behavior changes,
-  especially failure paths and ordering guarantees.
-- Run `npm test` after JavaScript behavior changes. For UI changes, also start
-  the app locally and perform a read-only preview smoke test when practical.
-- Do not weaken existing safety assertions to make an implementation change pass;
-change an established invariant only when the task explicitly requires it.
+## Project tracking
 
-## Working-tree discipline
-
-- Inspect the working tree before edits and preserve unrelated user changes.
-- Keep changes narrow; avoid unrelated refactors and generated-file edits.
-- Do not alter OAuth redirect settings, scopes, or account-write behavior
-  without an explicit task requirement and corresponding tests/documentation.
-
-## Cross-repository coordination
-
-The sibling repository at
-`C:\Users\polla\Documents\ChatGPT\personal-music-library` is a separate,
-evidence-preserving catalog with related Spotify audit and reconciliation
-workflows. Its behavior is not automatically shared with this application.
-
-- Before changing shared Spotify assumptions—read/write boundaries, saved-track
-  handling, duplicate occurrences, partial coverage, reconciliation, OAuth
-  scopes, or migration safety—inspect the sibling repository for affected
-  code, tests, and user documentation.
-- For unfamiliar cross-repository impact, use targeted Dekko queries in this
-  repository and targeted `rg` searches in the library repository. Read the
-  matching source before deciding whether a companion change is needed.
-- Keep each repository independently runnable and testable. Do not create a
-  runtime dependency, shared relative path, or cross-repo import without an
-  explicit task requirement.
-- Make a companion edit only when a behavior, safety promise, interface, or
-  documentation claim would otherwise become inconsistent. State that linked
-  impact in the change summary and run the relevant tests in every changed
-  repository.
-- When no sibling change is required, record that the cross-repository impact
-  was checked; do not broaden a focused task merely for symmetry.
-
-## Shared GitHub Project tracking
-
-For work performed for repository owner `mrdc1790`, use the existing
-[Personal Development Project](https://github.com/users/mrdc1790/projects/1)
-when tracking adds value. This is a private planning workspace; outside
-contributors are not expected to have access.
-
-- Track substantial features, bugs, work spanning repositories, multi-session
-  work, and meaningful blockers or follow-ups. Skip typo fixes, tiny cleanups,
-  and routine questions unless the owner asks to track them. Do not import an
-  entire backlog or create tasks just because an older repository exists.
-- At the start of worthwhile work, check the Project and relevant repository
-  issues for an existing item. Reuse it instead of creating duplicates. If
-  needed, add the repository issue or pull request, or create a private draft
-  with the repository name and a concrete outcome.
-- Maintain Status (Todo, In Progress, Done), Area (Music, Health, Website,
-  Other), and Priority (High, Medium, Low) when supported by the task. Do not
-  invent priorities, deadlines, requirements, or completion claims.
-- Update the item when work starts, materially changes, becomes blocked, or
-  finishes. Describe blockers in the item body; use the available Status
-  options. Mark Done only after the intended outcome and relevant checks are
-  complete, and link the commit, pull request, or other verification.
-- Keep detailed implementation plans in repository documentation and link
-  them from the item. Preserve separate repository ownership and runtime
-  boundaries. Never copy credentials, personal data, or private chat contents
-  into issues or Project items; public issues and pull requests remain public
-  even when tracked in a private Project.
-- Use available GitHub tools, or the authenticated `gh project` CLI when the
-  connector does not support Projects. If access is unavailable, continue the
-  authorized repository work and report the pending tracking update. Do not
-  claim synchronization succeeded, create another Project, change visibility,
-  or broaden credentials without the owner's authorization.
-- In the final work summary, briefly state the Project update, or explain why
-  tracking was unnecessary or unavailable. These instructions guide agents
-  during work; they do not create a background synchronization service.
+Use the private [Personal Development Project](https://github.com/users/mrdc1790/projects/1)
+for substantial work, work spanning repositories, or meaningful blockers.
+Skip routine questions and small cleanups. Check the Project and relevant
+issues for an existing item before adding one. Keep status, area, and agreed
+priority current. Mark Done after verification and link the evidence. Keep
+detailed plans in repository docs and private data out of tracking. If access
+is unavailable, continue and report the pending update. Summarize tracking
+in the final reply.
