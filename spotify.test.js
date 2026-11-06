@@ -469,6 +469,67 @@ function appFixture(playlistStatus = 200, membership = [true, false], savedUntil
     };
 }
 
+test('album preview skips a complete embedded list and paginates an incomplete list', async () => {
+    const app = appFixture();
+    const sourceId = 'a'.repeat(22);
+    const destinationId = 'b'.repeat(22);
+    const track = (id, number) => ({
+        uri: spotify.trackUri(id),
+        name: `Synthetic track ${number}`,
+        disc_number: 1,
+        track_number: number,
+    });
+    const sourceTracks = [track(sourceId, 1), track('c'.repeat(22), 2)];
+    const destinationTracks = [track(destinationId, 1), track('d'.repeat(22), 2)];
+    const albumReads = [];
+    const response = (data) => ({
+        status: 200,
+        ok: true,
+        headers: { get: () => null },
+        json: async () => data,
+    });
+    app.element('input[name=kind]:checked').value = 'album';
+    app.setFetch(async (url, options) => {
+        const match = url.match(/\/v1\/albums\/([^/?]+)(\/tracks)?(\?.*)?$/);
+        if (!match) {
+            if (url.includes('/contains')) {
+                return response([true, false, false, false]);
+            }
+            return app.originalFetch(url, options);
+        }
+        const [, id, path, query] = match;
+        albumReads.push([id, path, query]);
+        const next = `${spotify.API_BASE}/albums/${destinationId}/tracks?limit=50&offset=1`;
+        let data;
+        if (!path) {
+            const tracks =
+                id === sourceId
+                    ? { items: sourceTracks, next: null }
+                    : { items: destinationTracks.slice(0, 1), next };
+            data = {
+                name: id,
+                artists: [],
+                total_tracks: 2,
+                tracks: { ...tracks, total: 2, offset: 0 },
+            };
+        } else {
+            data = query.includes('offset=1')
+                ? { items: destinationTracks.slice(1), next: null }
+                : { items: destinationTracks.slice(0, 1), next };
+        }
+        return response(data);
+    });
+    await app.scan();
+    equal(albumReads, [
+        [sourceId, undefined, undefined],
+        [destinationId, undefined, undefined],
+        [destinationId, '/tracks', '?limit=50'],
+        [destinationId, '/tracks', '?limit=50&offset=1'],
+    ]);
+    equal(app.element('#preview').hidden, false);
+    equal(app.element('#execute').disabled, false);
+});
+
 test('preview stops at rate-limited playlist, blocks confirmation, and makes no writes', async () => {
     const app = appFixture(429);
     await Promise.all([app.scan(), app.scan()]);

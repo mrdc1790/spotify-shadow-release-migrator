@@ -157,12 +157,17 @@ playlists, or proceed to migration with partial/unverifiable coverage.
 
 ## Comparison: Spotify Dedup
 
-[Spotify Dedup](https://github.com/JMPerez/spotify-dedup) documents a promise
-queue/throttle as the way it traverses a library without incurring rate limits.
-That is the model adopted here: regulate dispatch before requests are sent,
-then honor server-directed cooldowns. Its deployed app may nevertheless have a
-different Spotify quota mode or Client ID, so it is not evidence that this
-client’s quota is unlimited.
+On November 5, 2026, the deployed Spotify Dedup client filtered the playlist
+list to owned, nonempty sources, reused its first Liked Songs page, and
+downloaded up to five additional pages concurrently per source. Its retries
+read `Retry-After` when available. The public repository uses sequential
+pagination and has a snapshot cache for clean playlists. The deployed build
+also batches removals by playlist position or saved-track ID. These differences
+can lower elapsed time or request counts. Spotify pools Development Mode quota
+by developer account, and Dedup's exact quota mode and remaining budget are
+unknown. The migrator continues to check playlist versions and verify
+replacement counts.
+[Deployed scan](https://spotify-dedup.com/_next/static/chunks/2y8dhnmqi11di.js) · [Deployed pager and deletion](https://spotify-dedup.com/_next/static/chunks/06j28pnnypgk8.js) · [Deployed retry client](https://spotify-dedup.com/_next/static/chunks/26i0vu80mouj0.js) · [Public repository](https://github.com/JMPerez/spotify-dedup/tree/5742217f733f9f0191c0be6f3cdc80bec57ae0de/dedup) · [Spotify quota update](https://developer.spotify.com/blog/2026-07-23-web-api-quota-updates)
 
 The “older relinker” repository was not identified by URL during this incident,
 so no claim is made about its exact implementation. Provide its GitHub URL to

@@ -166,10 +166,17 @@ The incident report describes the initial fix; the behavior below supersedes its
 Track previews use two sequential `GET /tracks/{id}` requests. Spotify removed
 batch `GET /tracks?ids=...` for development-mode apps; see the
 [February 2026 migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide).
+
 The former batch call was a compatibility defect, but its removal alone does not
 prove the cause of a particular 429. Rate-limit messages now identify the HTTP
 status, endpoint template (without IDs/query values), attempt, and whether a
 usable Spotify `Retry-After` was visible. No tokens or account data are logged.
+
+Album previews reuse the track list from Get Album when the page starts at
+offset zero, has no next page, and contains the expected track count and
+mapping fields. Other responses fall back to the paginated album-tracks
+endpoint. This saves one request per complete embedded list, up to two per
+album preview. [Spotify Get Album reference](https://developer.spotify.com/documentation/web-api/reference/get-an-album)
 
 Spotify reads now pass through a restricted same-origin route on the existing
 localhost server. This makes the real `Retry-After` readable even when Spotify

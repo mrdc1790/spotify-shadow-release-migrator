@@ -358,6 +358,29 @@ function trackLabel(track, requestedId) {
     return `${track.name} — ${track.artists.map((artist) => artist.name).join(', ')}${release ? ` · ${release}` : ''} · ${requestedId}${returned}`;
 }
 
+function albumTracks(album, id) {
+    const page = album?.tracks;
+    if (
+        page?.offset === 0 &&
+        page.next === null &&
+        page.total === album.total_tracks &&
+        Array.isArray(page.items) &&
+        page.items.length > 0 &&
+        page.items.length === page.total &&
+        page.items.every(
+            (track) =>
+                typeof track?.uri === 'string' &&
+                track.uri.startsWith('spotify:track:') &&
+                typeof track.name === 'string' &&
+                Number.isInteger(track.disc_number) &&
+                Number.isInteger(track.track_number),
+        )
+    ) {
+        return page.items;
+    }
+    return collectPages(`${API_BASE}/albums/${id}/tracks?limit=50`, api);
+}
+
 async function resolveInputs() {
     const chosen = document.querySelector('input[name=kind]:checked').value,
         source = parseSpotifyInput($('#source').value),
@@ -390,8 +413,8 @@ async function resolveInputs() {
     }
     const a = await api(`/albums/${source.id}`);
     const b = await api(`/albums/${destination.id}`);
-    const aTracks = await collectPages(`${API_BASE}/albums/${source.id}/tracks?limit=50`, api);
-    const bTracks = await collectPages(`${API_BASE}/albums/${destination.id}/tracks?limit=50`, api);
+    const aTracks = await albumTracks(a, source.id);
+    const bTracks = await albumTracks(b, destination.id);
     return {
         sourceLabel: `${a.name} — ${a.artists.map((x) => x.name).join(', ')}`,
         destinationLabel: `${b.name} — ${b.artists.map((x) => x.name).join(', ')}`,

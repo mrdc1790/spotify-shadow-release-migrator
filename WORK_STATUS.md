@@ -1,5 +1,13 @@
 # Work status
 
+## November 6, 2026 — fewer album preview requests
+
+Album previews reuse complete track lists from Spotify's Get Album response.
+Missing or incomplete lists use the paginated album-tracks endpoint. The
+synthetic controller test checks reuse and fallback in one read-only preview.
+All 66 migrator tests passed. The reconciliation guide records the available
+evidence for native Spotify duplicate controls. [Preview request behavior](README.md#rate-limit-recovery) · [Native playlist controls](CROSS_CLIENT_RECONCILIATION.md#native-playlist-controls)
+
 ## November 5, 2026 — catalog first, migrator for repairs
 
 Native folder playback makes playlist volumes practical for continuing manual

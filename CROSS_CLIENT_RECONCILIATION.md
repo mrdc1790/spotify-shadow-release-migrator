@@ -107,6 +107,18 @@ it gains no filesystem scanner, SQLite dependency, or local-audio cleanup action
 
 The taxonomy applies to playlists and Liked Songs. Same title/artist/duration/ISRC is candidate evidence, not automatic equivalence or permission. Ordinary single/album pairs do not need `linked_from` to be candidates. Current selected-URI matching does not implement automatic taxonomy classification or recording-level grouping.
 
+### Native playlist controls
+
+- Spotify staff documented **Add new ones** when copying tracks between playlists
+  on desktop and web. Staff also described the mobile track picker as blocking a
+  second addition of the same track through that menu. Adding a whole album
+  with partial overlap is a separate path that still needs a client check.
+  [Desktop and web](https://community.spotify.com/forum/en/discussion/6454339/how-do-i-set-my-playlist-to-only-add-new-songs-and-not-duplicate) · [Mobile](https://community.spotify.com/t5/Your-Library/Adding-duplicate-songs-to-a-playlist/m-p/5511432)
+- Community reports describe all copies disappearing after clearing a playlist
+  checkmark or using the row removal command. Treat a single-copy removal as
+  unverified unless before-and-after positions and counts confirm it.
+  [Playlist picker](https://community.spotify.com/forum/en/discussion/comment/5935019) · [Row removal](https://community.spotify.com/forum/en/discussion/5518797/deleting-one-copy-of-track-on-playlist-deletes-all-copies)
+
 ## Planned reconciliation and review requirements
 
 1. Retain account, endpoint/client, market, app/version, capture time, filters, API capability, and pagination/coverage for every observation. Agreement between API-based tools is not automatically independent evidence.
@@ -120,9 +132,17 @@ Both repositories were checked for this documentation update. The catalog owns h
 
 ## Reference projects checked
 
-The [Spotify Dedup site](https://spotify-dedup.com/) describes ID and metadata-similarity matching for playlists and likes. Its [inspected matcher](https://github.com/JMPerez/spotify-dedup/blob/master/dedup/deduplicator.ts) also matches different IDs by title, first artist, and duration proximity, while skipping null IDs. It can therefore flag ordinary single/album candidates, but is not a complete local inventory or a preferred-ID migration preserving every occurrence.
+Spotify Dedup can flag different Spotify IDs using title, first artist, and
+duration proximity. The hosted build inspected on November 5, 2026 defaults
+to keeping the oldest addition in a group. That cleanup can remove placements
+that a preferred-ID migration would preserve. The catalog reference records the
+matching, retention, and coverage evidence. [Catalog reference](https://github.com/mrdc1790/personal-music-library/blob/main/docs/REFERENCE_PROJECTS.md#spotify-dedup)
 
-The [specific relinker source](https://github.com/AfterForever667/spotify_songs_relink/blob/main/spotify_songs_relink.py) processes likes or one owned playlist, skips missing IDs, collapses repeated IDs per page, and handles relink/unavailable candidates. Playable single/album pairs without a relink need not be found. Its append-then-remove-all playlist behavior and absence of add readback do not meet this project's migration guarantees. Neither tool establishes why client totals differ. These are source-review findings, not live compatibility results; deployed Dedup behavior can differ from the inspected branch.
+The relinker processes likes or one owned playlist, skips missing IDs, collapses
+repeated IDs per page, and handles relink or unavailable candidates. Playable
+single/album pairs without a relink can be missed. The source appends and removes
+all old copies without verifying additions first. These source reviews leave
+the cause of differing client totals unresolved. [Relinker source](https://github.com/AfterForever667/spotify_songs_relink/blob/main/spotify_songs_relink.py)
 
 ## Discovery and resolver boundary
 
