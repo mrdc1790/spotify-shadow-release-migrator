@@ -2,6 +2,12 @@
 
 Safely replace a Spotify track—or an entire shadow re-release of an album—across every playlist you own or collaborate on.
 
+The [Personal Music Library roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
+puts catalog coverage and capacity reporting first. Use native Spotify folders
+to shuffle across playlist volumes for ongoing curation. Use this tool for a
+specific track or release repair that needs a reviewed replacement.
+[Spotify folder playback guide](https://community.spotify.com/forum/en/discussion/7411628/playlist-folders-are-now-available-on-mobile-here-s-how-to-organize-your-playlists).
+
 ## Implementation and plan status — October 27, 2026
 
 The committed implementation includes persistent preview recovery, resume/stop,
@@ -135,6 +141,11 @@ when you want a different instance. See the [dated observation](CROSS_CLIENT_REC
   Any unreadable playlist leaves coverage unknown and blocks confirmation.
   Rate limits and other read failures stop the scan; they are never treated as empty.
 - Album matching uses disc number + track number, not title similarity.
+- Each ordinary playlist needs room for the replacement occurrences while the
+  originals are still present. A 9,995-item playlist with ten replacements
+  would temporarily need 10,005 slots. Review available space before confirmation.
+  An automated capacity preflight is [planned](UPDATED_PLAN.md#next-delivery-sequence).
+  [Spotify save-limit FAQ](https://community.spotify.com/forum/en/kb/articles/792-is-there-a-save-limit-on-spotify).
 - Local files and podcast episodes are not supported replacement targets. This app does not inventory the desktop Local Files collection, inspect audio folders, verify phone downloads, or reconcile device Liked Songs totals. Local rows in a scanned playlist are not proof of complete local coverage.
 
 ## Counts, local files, and ordinary release duplicates
@@ -246,12 +257,10 @@ these changes. The sibling code/tests were inspected; no companion edit is neede
 ## Related catalog project
 
 The [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md) is authoritative for cross-project
-ownership, ordered steps, and acceptance criteria: documentation, manual trial,
-a versioned proposal file, read-only browser import, then outcome history.
-The catalog owns discovery, history, and evidence; this browser is the preferred
-future reviewed execution interface. No bridge is implemented. The catalog's
-existing Python migration commands retain their own restrictions; retirement
-requires a proven replacement workflow and recovery comparison.
+ownership and acceptance criteria. Resume the planned bridge after a manual
+repair trial demonstrates value. The catalog owns discovery, history, and
+evidence. This browser is the preferred future interface for reviewed execution.
+The catalog's existing Python migration commands retain their own restrictions.
 
 The [October 2 performance/design note](UPDATED_PLAN.md) retains benchmark and
 quota corrections; its implementation sequence is superseded by the shared roadmap.

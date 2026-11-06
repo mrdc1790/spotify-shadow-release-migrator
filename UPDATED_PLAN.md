@@ -6,6 +6,15 @@ a deployed release. The recovery implementation and planning work are now
 preserved in Git. This preservation pass changes no OAuth settings, personal
 database, or Spotify membership. See [work status](WORK_STATUS.md).
 
+## Priority update — November 5, 2026
+
+Native Spotify folder shuffle worked in an initial owner-reported mobile and
+desktop check. Manual curation can continue across playlist volumes. The
+[catalog delivery order](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
+puts saved coverage, capacity reporting, and measured browsing first.
+Keep this application focused on specific repairs. Revisit the bridge and
+mutation journal when a repair case warrants that work.
+
 ## Goal and supplied track pair
 
 Produce a complete, inspectable read-only preview for a reviewed source/destination
@@ -51,55 +60,46 @@ between edits. Obsidian is an optional view/editor for Markdown and private
 research notes, with no required runtime, sync, or credentials integration.
 
 The [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md)
-owns phase ordering: manual trial and measurement, versioned proposal contract,
-read-only export/import, outcome history, then imported-evidence optimization.
-The steps below refine browser recovery and discovery acceptance within those
-phases. Initial import uses fresh browser discovery; step 6 describes later
-validated reuse. Outcome exchange remains planned and does not imply rollback.
+owns the deferred repair phases. Start with a manual trial and measured
+benefit. If that supports a bridge, follow with a versioned proposal contract,
+read-only export/import, outcome history, and later validated evidence reuse.
 
 ## Next delivery sequence
 
-1. **Validate the current browser preview against the account.** Use an authorized
-   sign-in and the exact reviewed links. Record actual endpoint/read counts,
-   completion and unresolved coverage, pause/recovery behavior, and the sanitized
-   final error if one occurs. Do not infer absence from a failed source. A preview
-   does not authorize execution.
-2. **Validate useful catalog capture/import coverage.** Resume the existing
-   read-only Python capture workflow, retain partial/failed evidence, explicitly
-   export a completed capture, and import it into the separate historical catalog.
-   Keep capture SQLite and catalog SQLite formats distinct. Coordinate network
-   work with known cooldowns; overlapping requests are not a quota strategy.
-3. **Measure and improve local queries.** Benchmark capture/import size and cost,
-   exact-instance lookup latency, and memory. The catalog's general lookup,
-   set-query, and comparison paths still materialize snapshot rows. Add focused
-   indexed SQL operations where justified, with duplicate/order/coverage tests;
-   do not promise full-library latency before measuring it.
-4. **Implement a versioned catalog discovery export.** Follow the catalog's
+1. **Validate the browser preview for a concrete repair.** Use an authorized
+   sign-in and exact reviewed links. Record endpoint/read counts, completion,
+   unresolved coverage, pause/recovery behavior, and any sanitized error.
+   Require a separate explicit confirmation for execution.
+2. **Add capacity preflight before relying on near-capacity repairs.** Check
+   each target's fresh total items, including existing destination placements,
+   plus one temporary addition per source occurrence. Stop the entire write
+   phase if room is unknown or insufficient. Retain the existing
+   add-and-verify-before-remove order. Test exact-fit, one-over, incomplete
+   counts, and a multi-playlist run with one blocked target. This guard is planned.
+   [Spotify save-limit FAQ](https://community.spotify.com/forum/en/kb/articles/792-is-there-a-save-limit-on-spotify).
+3. **Implement a versioned catalog discovery export if the manual trial
+   demonstrates value.** Follow the catalog's
    [handoff requirements](https://github.com/mrdc1790/personal-music-library/blob/main/docs/INTEGRATION_DESIGN.md#catalog-to-migrator-discovery-handoff-planned).
    Retain account, capture/snapshot dates, source IDs/versions, coverage and errors,
    original/returned identity evidence, all ordered occurrences, and existing
    destinations. Include negative and unreadable sources; export no credentials.
    Missing fields remain unknown. This is future implementation, not an available
    command or a finalized JSON schema.
-5. **Add explicit read-only browser import.** Validate schema/account/counts/
+4. **Add explicit read-only browser import.** Validate schema/account/counts/
    positions/coverage and display historical observations with their dates. Import
    itself performs zero provider calls and cannot enable migration. Keep both
    repositories independently runnable without cross-repo imports or a local
-   database service.
-6. **Validate current discovery from imported evidence.** Freshly enumerate all
+   database service. Start with fresh browser discovery for current previews.
+5. **Plan outcome exchange separately.** Design durable mutation journaling and
+   review how to return verified outcomes to the catalog before implementing it.
+6. **Validate later reuse of imported evidence.** Freshly enumerate all
    playlists, check versions across positive and negative historical results, read
    changed/new/unresolved sources, and freshly check selected Liked Songs and
    releases. Only unchanged complete evidence may be reused. Keep complete-coverage
    confirmation gates and fresh execution preflight/readback.
-7. **Expand catalog intelligence separately.** Reviewed recording relationships,
-   local/device reconciliation, artist/release history, permitted enrichment,
-   offline playlist/DJ/placement queries, and later publishing retain their own
-   prerequisites. Ordinary queries use committed local data with no hidden
-   provider requests. Browser mutation journaling needs a separate design.
 
-The browser validation and catalog coverage work may progress independently.
-Do not delay a selected-ID preview until the entire rich library is complete, or
-add a second hidden scanner merely to avoid an explicit handoff.
+The catalog remains the primary development track. A selected-ID repair preview
+can run independently when needed.
 
 ## Integration acceptance
 

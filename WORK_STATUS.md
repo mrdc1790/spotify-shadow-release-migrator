@@ -1,6 +1,22 @@
-# Work status — October 27, 2026
+# Work status
 
-## DJ goal alignment and publication
+## November 5, 2026 — catalog first, migrator for repairs
+
+Native folder playback makes playlist volumes practical for continuing manual
+curation. The [catalog roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
+owns the first deliverable, a read-only capacity baseline. The browser migrator
+retains its repair role. The catalog bridge and browser mutation journal are
+deferred. A capacity preflight is planned for safe repair of nearly full
+playlists. This pass updates documentation.
+
+## Continue here
+
+For a concrete repair, start with an authorized read-only preview and retain
+sanitized request counts, coverage, recovery behavior, and any final error.
+Follow the [repair sequence](UPDATED_PLAN.md#next-delivery-sequence) before
+using a near-capacity target or planning the bridge.
+
+## October 27, 2026 — DJ goal alignment and publication
 
 README, UPDATED_PLAN, and context now link to the catalog's
 [DJ library workflow](https://github.com/mrdc1790/personal-music-library/blob/main/docs/DJ_LIBRARY_WORKFLOW.md):
@@ -53,16 +69,3 @@ mutation, OAuth configuration change, or deployment was performed in this pass.
 Both repositories were reviewed. Catalog changes are documentation only; neither
 application imports the other's runtime, storage, or credentials. Personal data
 and tokens are excluded from the commits.
-
-## Continue here
-
-1. Run an authorized read-only preview for reviewed inputs and retain sanitized
-   request counts, unresolved coverage, recovery behavior, and any final error.
-2. Validate useful catalog capture/import coverage and measure local query cost.
-3. Follow the [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md):
-   manual trial, proposal contract, read-only export/import, outcome history,
-   then optimization of imported discovery with fresh coverage validation.
-
-The catalog bridge, recording resolver, and browser mutation journal remain
-planned. A fresh complete preview and explicit confirmation are still required
-before any live migration; publishing these commits grants no migration approval.

@@ -2,9 +2,15 @@
 
 Current cross-repository sequencing and ownership are maintained in the
 [shared integration roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md). Follow it before the older proposals below:
-documentation and a manual trial precede a versioned file bridge. The catalog
-owns discovery/history/evidence; this browser is the preferred future execution
-interface. No bridge is implemented, and Python execution restrictions remain.
+a manual repair trial precedes any versioned file bridge. The catalog owns
+discovery, history, and evidence. This browser is the preferred future interface
+for reviewed Spotify repairs.
+
+**November 5, 2026 priority.** Spotify folder shuffle worked in an initial
+owner-reported check on mobile and desktop. Use native playlist volumes for
+ongoing manual curation. The [catalog roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
+puts the local evidence baseline and capacity reporting first. Continue the
+migrator for specific track or release repairs when needed.
 
 The shared long-term goal, clarified October 27, 2026, is DJing with a deeply
 organized, tagged library, probably through rekordbox. The catalog's
@@ -30,11 +36,9 @@ supplied track IDs are retained in [the plan](UPDATED_PLAN.md#goal-and-supplied-
 their live direction, account membership, and end-to-end preview/migration remain
 unverified by those fixtures. This update made no Spotify account changes.
 
-The catalog remains the long-lived local query/evidence engine. Validate useful
-capture/import coverage and measured exact-instance queries, then implement an
-explicit versioned discovery export/import. Browser recovery works independently
-while that catalog work proceeds. Local code and these plans may differ from the
-published branch; this is not a release announcement.
+The catalog remains the long-lived local query and evidence engine. Browser
+recovery works independently. See the November priority above for current
+sequencing.
 
 I am a heavy Spotify power user with a very large library, thousands of local songs, hundreds of playlists, and roughly 45,000+ Liked Songs. I am building toward a larger personal Spotify/music-library database and potentially a Spotify wrapper/media-hub application. This particular subproject concerns one of Spotify's most frustrating data-model quirks: **silent re-releases / shadow releases / alternate Spotify track IDs for what is effectively the same recording.**
 
@@ -723,12 +727,11 @@ Start by producing a safe, inspectable solution to:
 Once that works reliably, expand detection so the program can discover candidate old/new pairs itself.
 
 The separate catalog already has durable capture, historical snapshot import,
-and offline queries; its useful real coverage and scale validation continue in
-parallel with browser preview validation. Next connect them through the planned
-versioned discovery handoff, without requiring the whole rich database or
-canonical recording resolver before a selected-ID preview. Unavailable-track
-recovery, reviewed recording relationships, and enrichment remain separate
-catalog extensions. See [the delivery sequence](UPDATED_PLAN.md#next-delivery-sequence).
+and offline queries. Its first milestone is saved coverage and capacity
+reporting. Run selected-ID previews for specific repairs as needed, and revisit
+the planned handoff after a manual trial. Unavailable-track recovery, reviewed
+recording relationships, and enrichment remain separate catalog extensions.
+See [the repair sequence](UPDATED_PLAN.md#next-delivery-sequence).
 
 Treat **read-only indexing and trustworthy data modeling as the foundation**. The migration feature should be built on top of that foundation rather than writing a one-off Spotify mutation script.
 
