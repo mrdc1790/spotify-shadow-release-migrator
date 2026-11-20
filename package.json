@@ -9,6 +9,6 @@
         "test:browser": "node browser-smoke.js"
     },
     "engines": {
-        "node": ">=14"
+        "node": ">=18"
     }
 }

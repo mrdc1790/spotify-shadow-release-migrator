@@ -28,7 +28,17 @@ const server = http.createServer((req, res) => {
         });
         return;
     }
-    const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405, { Allow: 'GET, HEAD' });
+        return res.end();
+    }
+    let pathname;
+    try {
+        pathname = new URL(req.url, 'http://' + host).pathname;
+    } catch {
+        res.writeHead(400);
+        return res.end('Invalid request URL');
+    }
     const file = files.get(pathname);
     if (!file) {
         res.writeHead(404);
@@ -41,12 +51,13 @@ const server = http.createServer((req, res) => {
         }
         res.writeHead(200, {
             'Content-Type': types[path.extname(file)],
+            'Content-Length': data.length,
             'Cache-Control': 'no-store',
             'X-Content-Type-Options': 'nosniff',
             'Content-Security-Policy':
                 "default-src 'self'; connect-src 'self' https://api.spotify.com https://accounts.spotify.com; img-src 'self' https://i.scdn.co data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",
         });
-        res.end(data);
+        res.end(req.method === 'HEAD' ? undefined : data);
     });
 });
 server.on('error', (error) => {
@@ -59,7 +70,13 @@ server.on('error', (error) => {
     );
     process.exitCode = 1;
 });
-server.listen(port, host, () => {
-    console.log(`Spotify Playlist Migrator: http://${host}:${port}`);
-    console.log(`Redirect URI: http://${host}:${port}/`);
-});
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    console.error('PORT must be an integer from 0 to 65535.');
+    process.exitCode = 1;
+} else {
+    server.listen(port, host, () => {
+        const { port: listeningPort } = server.address();
+        console.log(`Spotify Playlist Migrator: http://${host}:${listeningPort}`);
+        console.log(`Redirect URI: http://${host}:${listeningPort}/`);
+    });
+}

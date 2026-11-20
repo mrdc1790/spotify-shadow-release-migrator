@@ -1,4 +1,8 @@
+import { spawn } from 'child_process';
+import { once } from 'events';
 import http from 'http';
+import { createInterface } from 'readline';
+import { fileURLToPath } from 'url';
 import { createSpotifyReadRelay, spotifyReadTarget } from './spotify-relay.js';
 import { readFileSync } from 'fs';
 import { runInNewContext } from 'vm';
@@ -21,6 +25,39 @@ const tests = [],
         if (JSON.stringify(a) !== JSON.stringify(b))
             throw new Error(`Expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`);
     };
+test('the local static server serves GET and HEAD and rejects POST', async () => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./server.js', import.meta.url))], {
+        env: { ...process.env, PORT: '0' },
+        stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const exited = once(child, 'exit');
+    const output = createInterface({ input: child.stdout });
+    const signal = AbortSignal.timeout(10_000);
+    try {
+        const [line] = await Promise.race([
+            once(output, 'line', { signal }),
+            exited.then(() => {
+                throw new Error('Local server exited before listening.');
+            }),
+        ]);
+        const url = line.match(/http:\/\/127\.0\.0\.1:\d+$/)[0];
+        const get = await fetch(url, { signal });
+        equal(get.status, 200);
+        const body = await get.arrayBuffer();
+        const head = await fetch(url, { method: 'HEAD', signal });
+        equal(head.status, 200);
+        equal(Number(head.headers.get('content-length')), body.byteLength);
+        equal(await head.text(), '');
+        const post = await fetch(url, { method: 'POST', signal });
+        equal(post.status, 405);
+        equal(post.headers.get('allow'), 'GET, HEAD');
+    } finally {
+        output.close();
+        child.kill();
+        await exited;
+    }
+});
+
 test('parses track and album inputs', () => {
     equal(parseSpotifyInput('spotify:album:4aawyAB9vmqN3uQ7FjRGTy'), {
         type: 'album',

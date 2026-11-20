@@ -77,7 +77,7 @@ Spotify's current development-mode rules may require the app owner to have Premi
 
 ### 2. Start the tool
 
-Install [Node.js](https://nodejs.org/) 14 or newer, then run from this folder:
+Install [Node.js](https://nodejs.org/) 18 or newer, then run from this folder:
 
 ```powershell
 npm start
