@@ -1,5 +1,12 @@
 # Work status
 
+## November 19, 2026 — local server checks
+
+The local server now reports the bound port, rejects invalid port settings,
+and restricts static files to GET and HEAD. The documented minimum is
+Node.js 18. All 67 tests passed, including a loopback HTTP fixture.
+[Server change](https://github.com/mrdc1790/spotify-shadow-release-migrator/commit/17a0a6fcc18c69c3227e5c523addaa2cfaf471be).
+
 ## November 6, 2026 — fewer album preview requests
 
 Album previews reuse complete track lists from Spotify's Get Album response.

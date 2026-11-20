@@ -12,6 +12,11 @@ Native Spotify folder shuffle worked in an initial owner-reported mobile and
 desktop check. Manual curation can continue across playlist volumes. The
 [catalog delivery order](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
 puts saved coverage, capacity reporting, and measured browsing first.
+The catalog's checkpoint export and capacity report passed local checks and
+are awaiting publication. The browser's capacity preflight remains a separate
+planned check against fresh Spotify state.
+[Catalog delivery status](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md#catalog-delivery-status).
+
 Keep this application focused on specific repairs. Revisit the bridge and
 mutation journal when a repair case warrants that work.
 
@@ -34,9 +39,9 @@ error/version/progress evidence; do not assign its cause from fixture results.
 
 | Area | Status | Evidence or limit |
 |---|---|---|
-| Durable preview recovery | Implemented locally in `preview-store.js`, `spotify.js`, and `app.js` | IndexedDB transaction completion is awaited; session/memory fallback is visible; tab-close recovery depends on retained site data |
-| Resume and progress | Implemented locally | Saved draft, fresh version validation, Stop scan, checked/remaining/reused/resumed/changed/page/unresolved counts |
-| Account and mapping safety | Implemented locally | Account checked before cache access, immutable identity preferred, legacy checkpoints promoted, edited mappings invalidate approval |
+| Durable preview recovery | Published on `main` in `preview-store.js`, `spotify.js`, and `app.js` | IndexedDB transaction completion is awaited; session/memory fallback is visible; tab-close recovery depends on retained site data |
+| Resume and progress | Published on `main` | Saved draft, fresh version validation, Stop scan, checked/remaining/reused/resumed/changed/page/unresolved counts |
+| Account and mapping safety | Published on `main` | Account checked before cache access, immutable identity preferred, legacy checkpoints promoted, edited mappings invalidate approval |
 | Confirmed execution | Existing separate fresh-read path | No preview checkpoint is trusted for final preflight or readback; no durable browser mutation journal or journal-based rollback |
 | Personal Music Library runtime | Existing Python/SQLite capture, import, history, and query foundations | October 22 recovery work and this docs refresh add no catalog schema/query feature and populate no personal database |
 | Catalog discovery export/import | Planned | No bridge CLI, browser importer, shared storage, credentials, or runtime dependency |
