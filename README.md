@@ -1,6 +1,12 @@
 # Spotify Playlist Migrator
 
-Safely replace a Spotify track—or an entire shadow re-release of an album—across every playlist you own or collaborate on.
+When a re-release gives the same album new Spotify track IDs, repairing every playlist by hand can leave old versions scattered across the library. This JavaScript app previews a track or album swap across editable playlists and Liked Songs, then applies the reviewed plan after confirmation.
+
+- **Recoverable preview** — IndexedDB stores account-scoped progress so a scan can resume after a rate limit or browser restart.
+- **Safer writes** — Recheck targets, add and verify each replacement occurrence, then remove the old tracks. The app reports partial failures because Spotify has no transaction across playlists.
+- **Try it locally** — Run `npm test`, or try the [synthetic browser smoke test](#test) to see preview recovery without a Spotify account.
+
+[Write ordering and API helpers](spotify.js) · [Preview storage](preview-store.js) · [Failure and recovery notes](RATE_LIMIT_INCIDENT.md)
 
 The [Personal Music Library roadmap](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
 puts catalog coverage and capacity reporting first. Use native Spotify folders
