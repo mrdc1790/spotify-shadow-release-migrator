@@ -65,6 +65,7 @@ function refreshPauseUI() {
     for (const selector of [
         '#source',
         '#destination',
+        '#playlistScope',
         'input[name=kind][value="track"]',
         'input[name=kind][value="album"]',
     ]) {
@@ -169,11 +170,14 @@ async function ensureAccount(restoreDraft = false) {
             ['track', 'album'].includes(draft.kind) &&
             typeof draft.source === 'string' &&
             typeof draft.destination === 'string' &&
+            (draft.playlistScope === undefined || typeof draft.playlistScope === 'string') &&
             !$('#source').value &&
-            !$('#destination').value
+            !$('#destination').value &&
+            !$('#playlistScope').value
         ) {
             $('#source').value = draft.source;
             $('#destination').value = draft.destination;
+            $('#playlistScope').value = draft.playlistScope ?? '';
             document.querySelector(`input[name=kind][value="${draft.kind}"]`).checked = true;
             resumeAvailable = true;
             refreshPauseUI();
@@ -437,6 +441,16 @@ async function inspectLibrary(uris) {
     }
     return result;
 }
+function parsePlaylistScope(value) {
+    if (!value) return null;
+    const id = value.match(/^(?:spotify:playlist:)?([A-Za-z0-9]{22})$/);
+    const link = value.match(
+        /^https:\/\/open\.spotify\.com\/playlist\/([A-Za-z0-9]{22})\/?(?:[?#].*)?$/,
+    );
+    if (id || link) return (id || link)[1];
+    throw new Error('Enter a Spotify playlist URL, URI, or 22-character ID.');
+}
+
 async function scan() {
     if (scanning || executing || checkingAvailability) return;
     if (queueSpotifyRequest.cooldownState().paused) {
@@ -460,10 +474,13 @@ async function scan() {
         // Preserve the last usable draft when a newly entered link is malformed.
         parseSpotifyInput($('#source').value);
         parseSpotifyInput($('#destination').value);
+        const playlistScope = $('#playlistScope').value.trim();
+        const playlistId = parsePlaylistScope(playlistScope);
         await previewStore.save(checkpointKey('draft'), {
             version: 1,
             source: $('#source').value.trim(),
             destination: $('#destination').value.trim(),
+            ...(playlistScope && { playlistScope }),
             kind: document.querySelector('input[name=kind]:checked').value,
         });
         resumeAvailable = true;
@@ -477,18 +494,28 @@ async function scan() {
                 onProgress: showProgress,
             });
         }
-        message('Validating releases and Liked Songs…');
+        message(playlistId ? 'Validating releases…' : 'Validating releases and Liked Songs…');
         const resolved = await resolveInputs();
         state.replacements = resolved.replacements;
         $('#sourceName').textContent = resolved.sourceLabel;
         $('#destinationName').textContent = resolved.destinationLabel;
-        const allUris = [
-            ...new Set(resolved.replacements.flatMap((r) => [r.sourceUri, r.destinationUri])),
-        ];
-        const playlists = await collectPages(`${API_BASE}/me/playlists?limit=50`, api);
-        const membership = await inspectLibrary(allUris);
+        let playlists;
+        if (playlistId) {
+            const playlist = await api(`/playlists/${playlistId}?fields=name`);
+            if (typeof playlist?.name !== 'string' || !playlist.name)
+                throw new Error('Spotify did not return the selected playlist name.');
+            playlists = [{ id: playlistId, name: playlist.name }];
+        } else {
+            const allUris = [
+                ...new Set(resolved.replacements.flatMap((r) => [r.sourceUri, r.destinationUri])),
+            ];
+            playlists = await collectPages(`${API_BASE}/me/playlists?limit=50`, api);
+            state.libraryTarget = findLibraryTarget(
+                resolved.replacements,
+                await inspectLibrary(allUris),
+            );
+        }
         const contents = new Map();
-        state.libraryTarget = findLibraryTarget(resolved.replacements, membership);
         state.skipped = [];
         progress = {
             total: playlists.length,
@@ -528,7 +555,7 @@ async function scan() {
         if (stopRequested) throw new Error('Preview stopped. Saved pages are kept; resume when ready.');
         state.targets = findTargets(playlists, contents, state.replacements);
         previewReady = state.skipped.length === 0;
-        render(resolved.replacements);
+        render(resolved.replacements, playlistId ? playlists[0] : null);
     } catch (error) {
         state.targets = [];
         state.libraryTarget = null;
@@ -568,7 +595,9 @@ async function inspectPlaylist(id) {
         throw new Error('Spotify did not return a playlist snapshot; source tracks were kept.');
     return { rows, snapshotId: playlist.snapshot_id };
 }
-function render(replacements) {
+function render(replacements, selectedPlaylist) {
+    $('#previewScope').hidden = !selectedPlaylist;
+    $('#previewScope').textContent = selectedPlaylist ? `Only playlist: ${selectedPlaylist.name}` : '';
     const unresolved = $('#unresolvedList');
     unresolved.replaceChildren();
     for (const playlist of state.skipped) {
@@ -587,7 +616,7 @@ function render(replacements) {
     $('#mappingCount').textContent = replacements.length;
     const list = $('#playlistList');
     list.replaceChildren();
-    if (state.libraryTarget.affected) {
+    if (state.libraryTarget?.affected) {
         const li = document.createElement('li');
         li.textContent = `Liked Songs — ${state.libraryTarget.occurrences} saved source track${state.libraryTarget.occurrences === 1 ? '' : 's'} to migrate`;
         list.append(li);
@@ -604,16 +633,28 @@ function render(replacements) {
     $('#skippedDetail').textContent = state.skipped.length
         ? ` (${forbidden} access denied; ${failed} changing or otherwise unresolved)`
         : '';
-    $('#likedStatus').textContent = state.libraryTarget.affected
-        ? `${state.libraryTarget.occurrences} source track${state.libraryTarget.occurrences === 1 ? ' is' : 's are'} in Liked Songs`
-        : 'source not found in Liked Songs';
+    $('#likedStatus').textContent = 'Liked Songs excluded';
+    if (!selectedPlaylist) {
+        $('#likedStatus').textContent = state.libraryTarget.affected
+            ? `${state.libraryTarget.occurrences} source track${state.libraryTarget.occurrences === 1 ? ' is' : 's are'} in Liked Songs`
+            : 'source not found in Liked Songs';
+    }
     $('#preview').hidden = false;
-    const affected = state.targets.length + Number(state.libraryTarget.affected);
+    const affected = state.targets.length + Number(Boolean(state.libraryTarget?.affected));
     $('#execute').disabled = !affected || !previewReady;
     if (!previewReady) {
         message(
             'Preview incomplete: some playlists remain unresolved. Other playlists were scanned and retained. Rebuild preview to retry; migration is unavailable until coverage is complete.',
             'error',
+        );
+        return;
+    }
+    if (selectedPlaylist) {
+        message(
+            affected
+                ? 'Review the mapping and selected playlist before confirming.'
+                : 'No source tracks were found in the selected playlist.',
+            affected ? 'success' : '',
         );
         return;
     }
@@ -633,7 +674,12 @@ async function execute() {
     $('#execute').disabled = true;
     $('#scan').disabled = true;
     try {
-        message('Re-checking Liked Songs and target playlists before migration…');
+        const playlistOnly = state.libraryTarget === null;
+        message(
+            playlistOnly
+                ? 'Re-checking the selected playlist before migration…'
+                : 'Re-checking Liked Songs and target playlists before migration…',
+        );
         const library = await prepareLibraryMigration(
             state.libraryTarget,
             state.replacements,
@@ -661,6 +707,15 @@ async function execute() {
             li.className = r.removed ? 'done' : 'warning';
             li.textContent = `${r.name} — ${r.removed ? 'migrated' : r.verified ? 'verified; source removal failed' : r.added ? 'replacement added but verification failed; source kept' : r.error || 'migration stopped safely'}`;
             list.append(li);
+        }
+        if (playlistOnly) {
+            message(
+                outcome.phase === 'complete'
+                    ? 'Migration complete. Replacement and source removal verified in the selected playlist.'
+                    : 'Migration stopped. Review the selected playlist result.',
+                outcome.phase === 'complete' ? 'success' : 'error',
+            );
+            return;
         }
         if (outcome.phase !== 'complete') {
             const li = document.createElement('li');
@@ -752,7 +807,7 @@ function invalidatePreview() {
     $('#preview').hidden = true;
 }
 
-for (const selector of ['#source', '#destination'])
+for (const selector of ['#source', '#destination', '#playlistScope'])
     $(selector).addEventListener('input', invalidatePreview);
 for (const kind of ['track', 'album'])
     $(`input[name=kind][value="${kind}"]`).addEventListener('change', invalidatePreview);

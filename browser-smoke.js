@@ -68,6 +68,8 @@ const server = http.createServer(async (request, response) => {
                 });
             const playlist = playlistIds.find((id) => url.pathname.includes(id));
             if (!playlist) return json(response, {}, 404);
+            if (url.searchParams.get('fields') === 'name')
+                return json(response, { name: `Synthetic playlist ${playlistIds.indexOf(playlist) + 1}` });
             if (url.searchParams.has('fields')) return json(response, { snapshot_id: 'synthetic-v1' });
             if (playlist === playlistIds[1] && url.searchParams.has('offset') && !interrupted) {
                 interrupted = true;

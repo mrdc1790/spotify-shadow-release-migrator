@@ -1,5 +1,15 @@
 # Work status
 
+## November 26, 2026 — repairs scoped to one playlist
+
+**Limit to one playlist** restricts discovery, resume, and confirmed execution
+to one playlist and excludes Liked Songs. Editing the selected playlist
+invalidates the preview. The prior authorized disposable-playlist pilot
+verified one replacement. The offline suite covers selected scope, duplicate
+source occurrences, a pre-existing destination, and invalid links. All 69
+tests passed. A synthetic Chrome preview verified the selected playlist name,
+absence of whole-library reads, and confirmation invalidation after editing.
+
 ## November 19, 2026 — local server checks
 
 The local server now reports the bound port, rejects invalid port settings,

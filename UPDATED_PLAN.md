@@ -12,8 +12,8 @@ Native Spotify folder shuffle worked in an initial owner-reported mobile and
 desktop check. Manual curation can continue across playlist volumes. The
 [catalog delivery order](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
 puts saved coverage, capacity reporting, and measured browsing first.
-The catalog's checkpoint export and capacity report passed local checks and
-are awaiting publication. The browser's capacity preflight remains a separate
+The catalog's checkpoint export and capacity report are published. The
+browser's capacity preflight remains a separate
 planned check against fresh Spotify state.
 [Catalog delivery status](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md#catalog-delivery-status).
 
@@ -43,10 +43,11 @@ error/version/progress evidence; do not assign its cause from fixture results.
 | Resume and progress | Published on `main` | Saved draft, fresh version validation, Stop scan, checked/remaining/reused/resumed/changed/page/unresolved counts |
 | Account and mapping safety | Published on `main` | Account checked before cache access, immutable identity preferred, legacy checkpoints promoted, edited mappings invalidate approval |
 | Confirmed execution | Existing separate fresh-read path | No preview checkpoint is trusted for final preflight or readback; no durable browser mutation journal or journal-based rollback |
+| One-playlist repair | Selected scope implemented and piloted | Excludes Liked Songs and whole-library discovery. Confirmation performs fresh checks for the selected target |
 | Personal Music Library runtime | Existing Python/SQLite capture, import, history, and query foundations | October 22 recovery work and this docs refresh add no catalog schema/query feature and populate no personal database |
 | Catalog discovery export/import | Planned | No bridge CLI, browser importer, shared storage, credentials, or runtime dependency |
 | Recording resolver and rich metadata | Planned catalog work | Exact selected-ID discovery need not wait for canonical recording matching, enrichment, DJ features, or recommendations |
-| Account-backed acceptance | Pending for the supplied pair | Synthetic tests do not establish membership, quota availability, direction approval, or migration success |
+| Account-backed acceptance | One authorized disposable-playlist repair verified | Wider account coverage and local-file replacement still require separate acceptance |
 
 The catalog is not a prerequisite for this browser recovery feature. Its database
 remains the intended long-lived evidence/query engine; IndexedDB is a recoverable
@@ -71,7 +72,7 @@ read-only export/import, outcome history, and later validated evidence reuse.
 
 ## Next delivery sequence
 
-1. **Validate the browser preview for a concrete repair.** Use an authorized
+1. **Retain evidence for each concrete repair.** Use an authorized
    sign-in and exact reviewed links. Record endpoint/read counts, completion,
    unresolved coverage, pause/recovery behavior, and any sanitized error.
    Require a separate explicit confirmation for execution.

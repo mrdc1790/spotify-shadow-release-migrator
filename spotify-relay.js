@@ -37,7 +37,13 @@ export function spotifyReadTarget(rawPath) {
                 : 'unrecognized parameter';
             throw new Error(`Unsupported Spotify query (${name}).`);
         }
-        if (key === 'fields' && value !== 'snapshot_id') throw new Error('Unsupported fields.');
+        if (
+            key === 'fields' &&
+            value !== 'snapshot_id' &&
+            !(value === 'name' && /^\/v1\/playlists\/[A-Za-z0-9]{22}$/.test(url.pathname))
+        ) {
+            throw new Error('Unsupported fields.');
+        }
         if (['limit', 'offset'].includes(key) && !/^\d{1,8}$/.test(value)) {
             throw new Error('Invalid pagination.');
         }

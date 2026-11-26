@@ -506,6 +506,73 @@ function appFixture(playlistStatus = 200, membership = [true, false], savedUntil
     };
 }
 
+test('preview and execution stay within the selected playlist', async () => {
+    const app = appFixture();
+    const playlist = '1'.repeat(22);
+    const path = `/playlists/${playlist}`;
+    const source = 'a'.repeat(22);
+    const destination = 'b'.repeat(22);
+    const rows = [spotify.trackUri(source), spotify.trackUri(destination), spotify.trackUri(source)];
+    app.element('#source').value = source;
+    app.element('#destination').value = destination;
+    app.element('#playlistScope').value = `https://open.spotify.com/playlist/${playlist}?si=test`;
+    let version = 1;
+    app.setFetch(async (url, options) => {
+        const target = new URL(url, 'http://localhost');
+        if (!target.pathname.includes(path)) return app.originalFetch(url, options);
+        const method = options.method || 'GET';
+        app.calls.push([url, method]);
+        let data;
+        if (method === 'POST') {
+            rows.push(...JSON.parse(options.body).uris);
+            version++;
+        } else if (method === 'DELETE') {
+            const { items, snapshot_id } = JSON.parse(options.body);
+            equal(items, [{ uri: spotify.trackUri(source) }]);
+            equal(snapshot_id, 'v2');
+            rows.splice(0, rows.length, ...rows.filter((uri) => uri !== spotify.trackUri(source)));
+            version++;
+        } else if (target.searchParams.get('fields') === 'name') {
+            data = { name: 'Sample playlist' };
+        } else if (target.searchParams.get('fields') === 'snapshot_id') {
+            data = { snapshot_id: `v${version}` };
+        } else {
+            data = { total: rows.length, items: rows.map((uri) => ({ item: { uri } })), next: null };
+        }
+        return {
+            status: method === 'POST' ? 201 : 200,
+            ok: true,
+            headers: { get: () => null },
+            json: async () => data || {},
+        };
+    });
+    await app.scan();
+    equal(app.element('#status').textContent, 'Review the mapping and selected playlist before confirming.');
+    equal(app.element('#previewScope').textContent, 'Only playlist: Sample playlist');
+    equal(app.element('#likedStatus').textContent, 'Liked Songs excluded');
+    equal(app.element('#execute').disabled, false);
+    equal(app.calls.every(([, method]) => method === 'GET'), true);
+    app.element('#playlistScope').oninput();
+    equal(app.element('#execute').disabled, true);
+    await app.scan();
+    await app.execute();
+    equal(app.element('#status').className, 'status success');
+    equal(rows, Array(3).fill(spotify.trackUri(destination)));
+    equal(app.calls.filter(([, method]) => method !== 'GET').map(([, method]) => method), ['POST', 'DELETE']);
+    equal(app.calls.some(([url]) => /\/me\/(?:playlists|library)/.test(url)), false);
+    equal(spotifyReadTarget(`/v1${path}?fields=name`).searchParams.get('fields'), 'name');
+    await rejects(async () => spotifyReadTarget(`/v1${path}/items?fields=name`), /Unsupported fields/);
+});
+
+test('an invalid playlist scope cannot fall back to a whole-library preview', async () => {
+    const app = appFixture();
+    app.element('#playlistScope').value = 'https://open.spotify.com/track/' + 'a'.repeat(22);
+    await app.scan();
+    equal(app.element('#execute').disabled, true);
+    equal(app.element('#status').textContent.includes('Enter a Spotify playlist'), true);
+    equal(app.calls.some(([url]) => /\/me\/(?:playlists|library)/.test(url)), false);
+});
+
 test('album preview skips a complete embedded list and paginates an incomplete list', async () => {
     const app = appFixture();
     const sourceId = 'a'.repeat(22);

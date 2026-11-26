@@ -91,6 +91,13 @@ npm start
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), paste the Client ID, and authorize Spotify.
 
+For a small test, add the source track to a disposable playlist you own. Paste
+the source and replacement track links, then enter that playlist's link in
+**Limit to one playlist**. **Build preview** checks that playlist only and
+excludes Liked Songs. Review the shown playlist, releases, and occurrence count,
+then use **Confirm migration** to apply the repair. The preview reuses unchanged
+playlist pages on subsequent runs.
+
 If Windows refuses the port with `EACCES`, it may be in an excluded TCP range
 (inspect with `netsh interface ipv4 show excludedportrange protocol=tcp`). Use an
 available port without changing Windows reservations, for example:

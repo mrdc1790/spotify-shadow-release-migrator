@@ -70,7 +70,14 @@
                     ><input
                         id="destination"
                         placeholder="Spotify URL, URI, or 22-character ID"
-                    /><button id="scan">Build preview</button>
+                    />
+                    <label for="playlistScope">Limit to one playlist <small>optional</small></label>
+                    <input id="playlistScope" placeholder="Spotify playlist URL, URI, or ID" />
+                    <p class="fine">
+                        With a playlist entered, preview and confirmation cover only that playlist.
+                        Leave it blank to scan playlists and Liked Songs.
+                    </p>
+                    <button id="scan">Build preview</button>
                     <button id="stopScan" class="quiet" hidden>Stop scan</button>
                     <p id="cacheStatus" class="fine" aria-live="polite">
                         Preview progress is saved locally when browser storage is available.
@@ -82,6 +89,7 @@
                 <span class="step">03</span>
                 <div>
                     <h2>Review and confirm</h2>
+                    <p id="previewScope" hidden></p>
                     <dl>
                         <dt>Source</dt>
                         <dd id="sourceName"></dd>
