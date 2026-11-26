@@ -13,8 +13,7 @@ desktop check. Manual curation can continue across playlist volumes. The
 [catalog delivery order](https://github.com/mrdc1790/personal-music-library/blob/main/docs/ROADMAP.md#next-work)
 puts saved coverage, capacity reporting, and measured browsing first.
 The catalog's checkpoint export and capacity report are published. The
-browser's capacity preflight remains a separate
-planned check against fresh Spotify state.
+browser checks capacity against fresh Spotify state during confirmation.
 [Catalog delivery status](https://github.com/mrdc1790/personal-music-library/blob/main/docs/CATALOG_MIGRATOR_ROADMAP.md#catalog-delivery-status).
 
 Keep this application focused on specific repairs. Revisit the bridge and
@@ -76,12 +75,14 @@ read-only export/import, outcome history, and later validated evidence reuse.
    sign-in and exact reviewed links. Record endpoint/read counts, completion,
    unresolved coverage, pause/recovery behavior, and any sanitized error.
    Require a separate explicit confirmation for execution.
-2. **Add capacity preflight before relying on near-capacity repairs.** Check
-   each target's fresh total items, including existing destination placements,
-   plus one temporary addition per source occurrence. Stop the entire write
-   phase if room is unknown or insufficient. Retain the existing
-   add-and-verify-before-remove order. Test exact-fit, one-over, incomplete
-   counts, and a multi-playlist run with one blocked target. This guard is planned.
+2. **Verify near-capacity repairs when needed.** Confirmation checks every
+   target's fresh total items against complete pagination and a stable snapshot.
+   It requires room for one temporary addition per source occurrence, including
+   when the destination already appears. Unknown or insufficient room blocks
+   all writes, including Liked Songs preparation. The synthetic suite covers
+   exact fit, one over, inconsistent totals, and a blocked target in a batch.
+   Subsequent external edits can still change capacity. Retain the verification
+   evidence for any separately authorized near-capacity pilot.
    [Spotify save-limit FAQ](https://community.spotify.com/forum/en/kb/articles/792-is-there-a-save-limit-on-spotify).
 3. **Implement a versioned catalog discovery export if the manual trial
    demonstrates value.** Follow the catalog's

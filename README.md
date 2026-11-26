@@ -157,7 +157,8 @@ when you want a different instance. See the [dated observation](CROSS_CLIENT_REC
 - Each ordinary playlist needs room for the replacement occurrences while the
   originals are still present. A 9,995-item playlist with ten replacements
   would temporarily need 10,005 slots. Review available space before confirmation.
-  An automated capacity preflight is [planned](UPDATED_PLAN.md#next-delivery-sequence).
+  Confirmation [checks fresh playlist headroom](UPDATED_PLAN.md#next-delivery-sequence)
+  for every temporary addition before either playlists or Liked Songs are changed.
   [Spotify save-limit FAQ](https://community.spotify.com/forum/en/kb/articles/792-is-there-a-save-limit-on-spotify).
 - Local files and podcast episodes are not supported replacement targets. This app does not inventory the desktop Local Files collection, inspect audio folders, verify phone downloads, or reconcile device Liked Songs totals. Local rows in a scanned playlist are not proof of complete local coverage.
 

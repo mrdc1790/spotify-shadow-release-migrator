@@ -135,6 +135,7 @@ test('never removes anything when an add fails', async () => {
     const inspect = async (id) => ({
         rows: [{ item: { uri: 'a' } }],
         snapshotId: `snap-${id}`,
+        total: 1,
     });
     const out = await runSafeMigration(
         targets,
@@ -171,7 +172,7 @@ test('preserves duplicate source occurrences and verifies before removal', async
         sourceCounts: { a: 2, c: 1 },
         destinationCounts: { b: 1 },
     };
-    const inspect = async () => ({ rows: [...rows], snapshotId: 'snap' });
+    const inspect = async () => ({ rows: [...rows], snapshotId: 'snap', total: rows.length });
     const out = await runSafeMigration(
         [target],
         [
@@ -206,6 +207,64 @@ test('stops if the playlist changed after preview', async () => {
     );
     equal(out.phase, 'preflight-failed');
     equal(calls, []);
+});
+
+test('checks every playlist capacity before any write, including Liked Songs preparation', async () => {
+    const mapping = [{ sourceUri: 'a', destinationUri: 'b' }];
+    const targets = ['one', 'two'].map((id) => ({
+        id, name: id, occurrences: 2, sourceUris: ['a'], sourceCounts: { a: 2 }, destinationCounts: { b: 1 },
+    }));
+    const rows = (count) => ['a', 'a', 'b', ...Array(count - 3).fill('unrelated')].map((uri) => ({ item: { uri } }));
+    for (const total of [9999, undefined, 3]) {
+        const calls = [];
+        const result = await runSafeMigration(
+            targets, mapping, async (_path, options) => calls.push(options.method),
+            async (id) => ({
+                rows: rows(id === 'one' ? 9998 : total === 9999 ? 9999 : 9998),
+                total: id === 'one' ? 9998 : total,
+                snapshotId: 'snapshot',
+            }),
+            async () => calls.push('liked'),
+        );
+        equal(result.phase, 'preflight-failed');
+        equal(result.results[0].error, null);
+        equal(result.results[1].error.includes(total === 9999 ? 'temporary addition(s)' : 'could not be verified'), true);
+        equal(calls, []);
+    }
+    const calls = [], playlist = rows(9998);
+    const result = await runSafeMigration(
+        targets.slice(0, 1), mapping,
+        async (_path, options) => {
+            calls.push(options.method);
+            if (options.method === 'POST')
+                playlist.push(...JSON.parse(options.body).uris.map((uri) => ({ item: { uri } })));
+            else playlist.splice(0, 2);
+        },
+        async () => ({ rows: [...playlist], total: playlist.length, snapshotId: 'snapshot' }),
+        async () => calls.push('liked'),
+    );
+    equal(result.phase, 'complete');
+    equal(calls, ['liked', 'POST', 'DELETE']);
+    equal(result.results[0].addCount, 2);
+});
+
+test('fresh playlist inspection uses provider totals and a fresh stable snapshot', async () => {
+    const id = '1'.repeat(22);
+    let metadata = 0;
+    const complete = await spotify.inspectFreshPlaylist(id, async (url) =>
+        url.includes('fields=')
+            ? { snapshot_id: 'stable-' + Math.min(++metadata, 1) }
+            : { total: 1, next: null, items: [{ item: { uri: 'a' } }] },
+    );
+    equal(complete.total, 1);
+    equal(complete.snapshotId, 'stable-1');
+    equal(metadata, 2);
+    await rejects(() => spotify.inspectFreshPlaylist(id, async (url) =>
+        url.includes('fields=') ? { snapshot_id: 'stable' } : { total: 2, next: null, items: [null] }),
+    /Incomplete or changing playlist pagination/);
+    await rejects(() => spotify.inspectFreshPlaylist(id, async (url) =>
+        url.includes('fields=') ? { snapshot_id: String(++metadata) } : { total: 0, next: null, items: [] }),
+    /changed during both reads/);
 });
 test('includes Liked Songs in the migration target', () => {
     const target = findLibraryTarget(

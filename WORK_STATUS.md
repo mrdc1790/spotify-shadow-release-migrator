@@ -1,5 +1,14 @@
 # Work status
 
+## November 26, 2026 — confirmed repair capacity preflight
+
+Every affected playlist must have a freshly verified total and enough room for
+all temporary replacements before Spotify writes begin. Confirmed playlist
+reads verify pagination between snapshot checks. The synthetic tests include
+exact fit, one over, missing totals, and a multi-playlist preflight failure
+that prevents Liked Songs preparation. All 71 tests passed. A live
+near-capacity repair has yet to be verified.
+
 ## November 26, 2026 — repairs scoped to one playlist
 
 **Limit to one playlist** restricts discovery, resume, and confirmed execution

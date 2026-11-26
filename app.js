@@ -6,6 +6,7 @@ import {
     findLibraryTarget,
     findTargets,
     finishLibraryMigration,
+    inspectFreshPlaylist,
     parseSpotifyInput,
     prepareLibraryMigration,
     createSpotifyQueue,
@@ -586,15 +587,6 @@ async function checkAvailability() {
         refreshPauseUI();
     }
 }
-async function inspectPlaylist(id) {
-    const [rows, playlist] = await Promise.all([
-        collectPages(`${API_BASE}/playlists/${id}/items?limit=50`, api),
-        api(`/playlists/${id}?fields=snapshot_id`),
-    ]);
-    if (!playlist.snapshot_id)
-        throw new Error('Spotify did not return a playlist snapshot; source tracks were kept.');
-    return { rows, snapshotId: playlist.snapshot_id };
-}
 function render(replacements, selectedPlaylist) {
     $('#previewScope').hidden = !selectedPlaylist;
     $('#previewScope').textContent = selectedPlaylist ? `Only playlist: ${selectedPlaylist.name}` : '';
@@ -680,25 +672,19 @@ async function execute() {
                 ? 'Re-checking the selected playlist before migration…'
                 : 'Re-checking Liked Songs and target playlists before migration…',
         );
-        const library = await prepareLibraryMigration(
-            state.libraryTarget,
-            state.replacements,
-            api,
-            inspectLibrary,
-        );
-        if (!['prepared', 'not-affected'].includes(library.phase)) {
-            message(
-                `Stopped safely: ${library.error || 'Liked Songs could not be verified.'}`,
-                'error',
-            );
-            refreshPauseUI();
-            return;
-        }
+        let library;
         const outcome = await runSafeMigration(
                 state.targets,
                 state.replacements,
                 api,
-                inspectPlaylist,
+                (id) => inspectFreshPlaylist(id, api),
+                async () => {
+                    library = await prepareLibraryMigration(
+                        state.libraryTarget, state.replacements, api, inspectLibrary,
+                    );
+                    if (!['prepared', 'not-affected'].includes(library.phase))
+                        throw new Error(library.error || 'Liked Songs could not be verified.');
+                },
             ),
             list = $('#playlistList');
         list.replaceChildren();
@@ -707,6 +693,11 @@ async function execute() {
             li.className = r.removed ? 'done' : 'warning';
             li.textContent = `${r.name} — ${r.removed ? 'migrated' : r.verified ? 'verified; source removal failed' : r.added ? 'replacement added but verification failed; source kept' : r.error || 'migration stopped safely'}`;
             list.append(li);
+        }
+        if (outcome.phase === 'preflight-failed') {
+            const blocked = outcome.results.find((result) => result.error);
+            message(`Migration stopped before writes. ${blocked.name}: ${blocked.error}`, 'error');
+            return;
         }
         if (playlistOnly) {
             message(

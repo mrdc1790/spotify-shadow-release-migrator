@@ -313,7 +313,7 @@ export function createPlaylistCheckpoints({
         }
         cached.complete = true;
         await save(id, cached);
-        onProgress({ type: 'complete', id, rows: cached.rows.length });
+        onProgress({ type: 'complete', id, rows: cached.rows.length, snapshotId: cached.snapshot });
         return cached.rows;
     }
 
@@ -332,6 +332,17 @@ export function createPlaylistCheckpoints({
             }
         }
     };
+}
+
+export async function inspectFreshPlaylist(id, request) {
+    let snapshotId;
+    const inspect = createPlaylistCheckpoints({
+        onProgress(event) {
+            if (event.type === 'complete') snapshotId = event.snapshotId;
+        },
+    });
+    const rows = await inspect(id, request);
+    return { rows, snapshotId, total: rows.length };
 }
 
 export function buildAlbumReplacements(sourceTracks, destinationTracks) {
@@ -424,8 +435,13 @@ function counts(rows) {
 function sameCounts(expected, actual) {
     return Object.entries(expected).every(([uri, count]) => (actual[uri] || 0) === count);
 }
-export async function runSafeMigration(targets, replacements, api, inspectPlaylist) {
+const playlistCapacity = 10_000;
+
+export async function runSafeMigration(targets, replacements, api, inspectPlaylist, beforeWrites) {
     const bySource = new Map(replacements.map((r) => [r.sourceUri, r.destinationUri]));
+    const additions = targets.map((target) =>
+        target.sourceUris.flatMap((uri) => Array(target.sourceCounts?.[uri] || 1).fill(bySource.get(uri))),
+    );
     const results = targets.map((t) => ({
         id: t.id,
         name: t.name,
@@ -460,18 +476,23 @@ export async function runSafeMigration(targets, replacements, api, inspectPlayli
                 throw new Error(
                     'Playlist changed since preview; rebuild the preview before migrating.',
                 );
+            if (!Number.isSafeInteger(inspection.total) || inspection.total !== inspection.rows.length)
+                throw new Error('Playlist capacity could not be verified.');
+            if (additions[i].some((uri) => !uri)) throw new Error('A replacement track is missing from the reviewed mapping.');
+            if (inspection.total + additions[i].length > playlistCapacity)
+                throw new Error(
+                    `Playlist has ${inspection.total} items and needs room for ${additions[i].length} temporary addition(s). Limit: ${playlistCapacity}.`,
+                );
             inspections[i] = inspection;
         } catch (error) {
             results[i].error = error.message;
         }
     }
     if (results.some((result) => result.error)) return { phase: 'preflight-failed', results };
+    if (beforeWrites) await beforeWrites();
     for (let i = 0; i < results.length; i++) {
         const result = results[i],
-            target = targets[i],
-            needed = target.sourceUris
-                .flatMap((uri) => Array(target.sourceCounts?.[uri] || 1).fill(bySource.get(uri)))
-                .filter(Boolean);
+            needed = additions[i];
         try {
             await chunks(needed, 100, (uris) =>
                 api(`/playlists/${result.id}/items`, {
