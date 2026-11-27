@@ -128,6 +128,11 @@ can run independently when needed.
 
 ## Validation record and startup
 
+The [selected-playlist walkthrough](README.md#walk-through-a-selected-playlist-preview)
+uses the local browser fixture to check scope, repeats, and invalidation.
+Automated tests cover capacity preflight. Live near-capacity and local-file
+pilots and catalog file exchange remain open.
+
 On October 27, `npm test` passed **65/65** migrator tests and
 `python -m unittest test_library.py` passed **11** catalog tests. These are offline
 fixtures, including the supplied IDs and an interrupted 581-playlist scan with a

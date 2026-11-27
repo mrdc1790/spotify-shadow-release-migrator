@@ -299,6 +299,23 @@ The projects share these rules: preserve duplicate occurrences; classify unreada
 
 ## Test
 
+### Walk through a selected-playlist preview
+
+1. Run `npm run test:browser` and open the localhost URL it prints. The fixture
+   fills in synthetic source and destination data, so start with that pair.
+2. Enter `1111111111111111111111` in **Limit to one playlist** and click
+   **Build preview**. Expect **Only playlist: Synthetic playlist 1**, two
+   source occurrences to replace, and **Liked Songs excluded**. The existing
+   destination copy stays separate from the two required additions.
+3. Edit the playlist field after preview to see confirmation become disabled.
+   Open `/smoke-status` on the same local origin to inspect fixture counts.
+   The selected preview uses playlist-specific reads and reports zero writes.
+4. Clear the scope and build again to exercise the separate whole-library
+   recovery case below. Use the `npm test` capacity cases for exact fit, one
+   over the limit, inconsistent totals, and a blocked target in a batch.
+
+### Run the automated suite and recovery fixture
+
 ```powershell
 npm test
 ```

@@ -1,5 +1,13 @@
 # Work status
 
+## November 27, 2026 — reproducible repair walkthrough
+
+The [synthetic browser walkthrough](README.md#walk-through-a-selected-playlist-preview)
+covers playlist scope, duplicate counts, preview invalidation, and recovery.
+The capacity and live pilot statuses are recorded in the [plan](UPDATED_PLAN.md#next-delivery-sequence).
+All 71 automated tests passed. Chrome verified selected-playlist preview and
+confirmation invalidation after editing the scope.
+
 ## November 26, 2026 — confirmed repair capacity preflight
 
 Every affected playlist must have a freshly verified total and enough room for
